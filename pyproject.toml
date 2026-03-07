@@ -1,0 +1,16 @@
+[project]
+name = "histological-image-analysis"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fiftyone>=1.13.3",
+    "ipykernel>=7.2.0",
+    "jupyter>=1.1.1",
+    "jupyterlab>=4.5.5",
+    "kagglehub>=1.0.0",
+    "nibabel>=5.4.0",
+    "pydicom==2.4.4",
+    "rt-utils>=1.2.7",
+]
