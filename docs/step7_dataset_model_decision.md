@@ -1,6 +1,6 @@
 # Step 7: Dataset + Model Combination — Decision & Status
 
-## Status: IN PROGRESS
+## Status: DONE
 
 **Last updated:** 2026-03-08
 **Orchestrator:** Claude Code (this LLM session)
@@ -36,7 +36,7 @@ The end-goal domain is **autofluorescence images**, not Nissl. The model must id
 - UNI2 — gated license, research-only restriction
 - SegGPT — few-shot only, not suitable for full fine-tuning
 
-### Datasets: Both CCFv3 resolutions + Mouse Atlas 2D + Human Atlas (TBD)
+### Datasets: Both CCFv3 resolutions + Mouse Atlas 2D + Human Atlas
 
 | Dataset | Role | Resolution | Notes |
 |---------|------|-----------|-------|
@@ -46,7 +46,7 @@ The end-goal domain is **autofluorescence images**, not Nissl. The model must id
 | CCFv3 `annotation_25.nrrd` | Training labels (autofluo) | 25μm | Paired with template volume |
 | Mouse Atlas 2D sections | Validation/test | 1.047 μm/px at ds=4 | 509 sections, 132 with SVG annotations |
 | Mouse Atlas SVGs | Validation labels | — | Rasterize to segmentation masks |
-| Human Atlas Nissl | Supplementary (cross-species) | TBD | **API query returns 0 results — under investigation** |
+| Human Atlas Nissl | Supplementary (cross-species) | ds=4 | **RESOLVED:** 14,566 images, 6 donors, 1,067 datasets. Treatment filter is `'NISSL'` (UPPERCASE). ~2.9 GB at ds=4. |
 
 ### Structure Granularity: Progressive (Coarse → Fine)
 
@@ -96,32 +96,28 @@ The end-goal domain is **autofluorescence images**, not Nissl. The model must id
 
 ## Outstanding Tasks
 
-### BLOCKING: Human Brain Atlas API Query — Returns 0 Results
+### RESOLVED: Human Brain Atlas API Query
 
-**Problem:** The explorer notebook ran this query and got 0 datasets:
+**Root cause:** Treatment name is `'NISSL'` (UPPERCASE), not `'Nissl'` (title case). The explorer notebook used title case → 0 results. The other LLM discovered this and updated the download script/plan.
+
+**Correct query:**
 ```
-GET https://api.brain-map.org/api/v2/data/query.json?criteria=model::SectionDataSet,rma::criteria,products[id$eq2],[failed$eqfalse],treatments[name$eq'Nissl'],rma::include,specimen(donor),plane_of_section,rma::options[num_rows$eq50][order$eq'id']
+GET https://api.brain-map.org/api/v2/data/query.json?criteria=model::SectionDataSet,rma::criteria,products[id$eq2],[failed$eqfalse],treatments[name$eq'NISSL'],rma::include,specimen(donor),plane_of_section,rma::options[num_rows$eqall]
 ```
 
-**Contradicts:** `docs/progress.md` which says "Queried via `treatments[name$eq'Nissl']` — datasets found."
+**Result:** 1,067 datasets, 14,566 section images, 6 donors: H0351.1009, H0351.1012, H0351.1015, H0351.1016, H0351.2001, H0351.2002.
 
-**Investigation needed — queries to try:**
-1. Original query (confirm 0 results)
-2. Without treatments filter: `model::SectionDataSet,rma::criteria,products[id$eq2],[failed$eqfalse],rma::options[num_rows$eq5]`
-3. Different product IDs (1-5): `model::SectionDataSet,rma::criteria,products[id$eq{N}],rma::options[num_rows$eq3]`
-4. List all products: `model::Product,rma::options[num_rows$eqall]`
-5. Use `model::SectionImage` instead: `model::SectionImage,rma::criteria,data_set(products[id$eq2]),treatments[name$eq'Nissl'],rma::options[num_rows$eq5]`
-6. Without treatment filter on SectionImage: `model::SectionImage,rma::criteria,data_set(products[id$eq2]),rma::options[num_rows$eq5]`
+### Bug in Download Script: Missing Import
 
-**Status:** NOT STARTED — was about to run when user requested this doc be written.
+`scripts/download_allen_data.py` line 175 uses `ReferenceSpaceCache` but the import `from allensdk.core.reference_space_cache import ReferenceSpaceCache` is missing from the top of the file. This will cause a `NameError` when step 5B runs. However, step 5C downloads the same 25μm volumes via direct HTTP anyway (the `CCFV3_URLS` dict includes `annotation_25.nrrd` and `average_template_25.nrrd`), so step 5B may fail gracefully and the data is still obtained.
 
-### Tell Other LLM: Human Atlas Download May Need Query Fix
+### Minor: Duplicate 25μm Download
 
-The download plan (`docs/data_download_plan.md`) Step 5F assumes the human query works. It may need to be updated after the API investigation above.
+The script downloads 25μm volumes twice:
+- Step 5B via AllenSDK (`annotation_25.nrrd`, `template_25.nrrd`)
+- Step 5C via direct HTTP (`annotation_25.nrrd`, `average_template_25.nrrd`)
 
-### Tell Other LLM: AllenSDK Version Still Wrong
-
-Line 30 of `docs/data_download_plan.md` still hedges on the AllenSDK version. Should just run `pip show allensdk` to confirm.
+The annotation file has the same name so the idempotency check would skip it. The template file has different names (`template_25.nrrd` vs `average_template_25.nrrd`) so both would be downloaded. Not critical — wastes ~85 MB of disk but data is correct.
 
 ---
 
@@ -166,12 +162,12 @@ Line 30 of `docs/data_download_plan.md` still hedges on the AllenSDK version. Sh
 If context is lost, read these files in order:
 1. `CLAUDE.md` — coding standards
 2. `docs/progress.md` — master project state
-3. `docs/step7_dataset_model_decision.md` — **this file** (Step 7 decisions + outstanding tasks)
-4. `docs/data_download_plan.md` — download script plan (being executed by another LLM)
+3. `docs/step7_dataset_model_decision.md` — **this file** (Step 7 decisions — DONE)
+4. `docs/step8_training_data_pipeline.md` — **Step 8 plan** (next step to implement)
+5. `docs/data_download_plan.md` — download script plan (check if Steps 5-6 are complete)
 
-**Next action when resuming:**
-1. Run the Human Atlas API investigation queries listed in "Outstanding Tasks" above
-2. Update this doc with findings
-3. Communicate results to user (and to other LLM if download plan needs changes)
-4. Once Step 7 is finalized, update `docs/progress.md` Step 7 to "Done"
-5. Proceed to Step 8: Build training data pipeline
+**Step 7 is DONE.** All decisions finalized. Proceed to Step 8.
+
+**Known issue (non-blocking):** Download script (`scripts/download_allen_data.py`) has a missing `ReferenceSpaceCache` import. Direct HTTP fallback covers it. Notify user if the download had errors.
+
+**Next action:** Step 8 — Build training data pipeline. Full plan at `docs/step8_training_data_pipeline.md`.

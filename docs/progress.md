@@ -9,7 +9,7 @@ Fine-tune an open-source vision foundation model to identify brain structures in
 - **GPU:** NVIDIA L40S (48 GB VRAM)
 - **RAM:** 512 GB
 - **Topology:** Single node
-- **Constraint:** Cluster firewall blocks some external downloads — workaround is local download + upload to DBFS
+- **Constraint:** Cluster firewall blocks some external downloads — workaround is local download + upload to Workspace
 
 ## Decision Log
 
@@ -17,10 +17,10 @@ Fine-tune an open-source vision foundation model to identify brain structures in
 |------|----------|-----------|
 | 2026-03-06 | Use Allen Brain Institute data for training | Gold-standard annotated brain structure data with Nissl staining |
 | 2026-03-06 | Target both mouse and human brains | Allen provides atlases for both species |
-| 2026-03-06 | Use DBFS upload pattern for data | Databricks firewall blocks direct downloads |
+| 2026-03-06 | Use Workspace upload pattern for data | Databricks firewall blocks direct downloads |
 | 2026-03-06 | FiftyOne/Voxel51 not needed for main pipeline | Our data is standard 2D images + segmentation masks, not DICOM. Matplotlib suffices for viz. |
 | 2026-03-06 | Firewall blocks ALL Allen domains on Databricks | Tested via UI + CLI on dev cluster — `api.brain-map.org` and `download.alleninstitute.org` get `ConnectionResetError(104)`. PyPI and HuggingFace pass. See `docs/databricks_connectivity.md` |
-| 2026-03-06 | Local download → DBFS upload for Allen data | Download ~3 GB locally, `databricks fs cp` to `dbfs:/FileStore/allen_brain_data/`, read from `/dbfs/` in notebooks |
+| 2026-03-06 | Local download → Workspace upload for Allen data | Download ~6 GB locally, `databricks workspace import-dir` to `/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology`, read directly in notebooks |
 
 ---
 
@@ -203,10 +203,17 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 2. ~~Complete model research~~ Done
 3. ~~Build allen_brain_data_explorer.ipynb~~ Done — all cells pass
 4. ~~Test Databricks connectivity~~ Done — Allen domains blocked, PyPI/HuggingFace pass. See `docs/databricks_connectivity.md`
-5. **Download Allen data locally** — CCFv3 volumes (10μm + 25μm), mouse atlas images + SVGs, ontology JSON (~3 GB total)
-6. **Upload to DBFS** — `databricks fs cp ./local_allen_data/ dbfs:/FileStore/allen_brain_data/ --recursive --profile dev`
-7. **Choose dataset + model combination** — review explorer notebook outputs, decide on primary dataset and model
-8. **Build training data pipeline** — slice CCFv3 volumes into 2D pairs, rasterize SVG annotations
+5. ~~Download Allen data locally~~ Done — 20.87 GB total. 4 NRRD volumes, 509 mouse images, 509 SVGs, 14,565 human images, ontology JSON. Script: `scripts/download_allen_data.py`. Details: `docs/data_download_plan.md`.
+6. ~~Upload to Databricks Workspace~~ Done — All files uploaded. `ara_nissl_10.nrrd` (2.17 GB) in DBFS at `dbfs:/FileStore/allen_brain_data/ccfv3/`. All other files in Workspace at `/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology/`. Pending: cluster-side verification (Step 6B).
+7. ~~Choose dataset + model combination~~ **DONE**. See `docs/step7_dataset_model_decision.md`.
+   - DINOv2-Large + UperNet, CCFv3 (both 10μm Nissl + 25μm autofluorescence), Mouse Atlas 2D for validation
+   - Final target domain is **autofluorescence** (not just Nissl). Training progresses Nissl → autofluorescence.
+   - Granularity: coarse (~5 classes) → fine (~672 classes)
+   - Human Atlas: 14,566 images, 6 donors. Treatment filter `'NISSL'` (UPPERCASE).
+8. **Build training data pipeline** — IN PROGRESS (planning complete, code not started). See `docs/step8_training_data_pipeline.md`.
+   - 4 components: ontology grouper, CCFv3 slicer, SVG rasterizer, PyTorch dataset
+   - Code goes in `src/histological_image_analysis/` with TDD tests in `tests/`
+   - Open questions: SVG rasterization library, tiling strategy, storage format, split strategy
 9. **Build fine-tuning notebook** — load chosen model, attach segmentation head, train on Allen data
 10. **Evaluate** — test on held-out Mouse Atlas sections, measure per-structure IoU
 
@@ -216,7 +223,7 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Project:** `histological-image-analysis` — Fine-tune a vision model to identify brain structures in Nissl-stained mouse/human brain slides using Allen Brain Institute data.
 
-**Compute:** Databricks 17.3 LTS, g6e.16xlarge (L40S 48GB VRAM, 512GB RAM), single node. Firewall blocks Allen domains — use local download + DBFS upload.
+**Compute:** Databricks 17.3 LTS, g6e.16xlarge (L40S 48GB VRAM, 512GB RAM), single node. Firewall blocks Allen domains — use local download + Workspace upload.
 
 **Completed:** (1) Data source research — 7 sources evaluated, Mouse Atlas + CCFv3 are primary. (2) Model research — 20 models, top pick is DINOv2-Large + UperNet seg head. (3) Explorer notebook runs end-to-end locally. (4) Connectivity tested — Allen domains BLOCKED (`ConnectionResetError 104`), PyPI + HuggingFace PASS. Details in `docs/databricks_connectivity.md`.
 
@@ -224,6 +231,10 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Key API findings:** Atlas images use `model::AtlasImage` with join `atlas_data_set(atlases[id$eq1])`, NOT `atlas_data_set_id`. Download via `atlas_image_download/{id}`. SVG annotations via `svg_download/{id}`. CCFv3 via AllenSDK `ReferenceSpaceCache`. Filter `None` from `get_structures_by_id()`.
 
-**Next:** Download Allen data locally (~3 GB), upload to `dbfs:/FileStore/allen_brain_data/` via `databricks fs cp --profile dev`, then choose dataset+model combo, build training pipeline, fine-tune, evaluate.
+**Steps 5-6 (download+upload):** DONE. 20.87 GB total. Details: `docs/step5_6_completion_report.md`. Key data: CCFv3 nissl 10μm (float32, 1320×800×1140, 2.17 GB on DBFS), CCFv3 template 25μm (uint16, 528×320×456), 509 mouse images + 509 SVGs, 14,565 human images (~18 GB), ontology JSON. Most files on Workspace at `/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology/`. Exception: `ara_nissl_10.nrrd` on DBFS at `/dbfs/FileStore/allen_brain_data/ccfv3/` (exceeded 500 MB workspace limit). Step 6B (cluster verification) pending.
 
-**Repo files:** `docs/progress.md` (this file), `docs/databricks_connectivity.md`, `exploration/allen_brain_data_explorer.ipynb`, `exploration/databricks_connectivity_check.ipynb`. READ `CLAUDE.md` before writing code — no global vars, TDD, SOLID, uv, don't commit.
+**Step 7 (dataset+model):** DONE. DINOv2-Large + UperNet. Final goal: autofluorescence. Training: Nissl → autofluorescence, coarse (5) → fine (672). Human Atlas RESOLVED (`'NISSL'` uppercase). Details: `docs/step7_dataset_model_decision.md`.
+
+**Step 8 (training data pipeline):** Planning research COMPLETE, code NOT STARTED. Full plan at `docs/step8_training_data_pipeline.md`. 4 components: ontology grouper, CCFv3 volume slicer (must handle float32 nissl normalization), SVG rasterizer, PyTorch dataset. Needs `torch`, `transformers`, `svgpathtools`, `Pillow` added to deps. Open questions: SVG rasterization lib, 10μm tiling strategy, storage format, train/val split approach.
+
+**Repo files:** `docs/progress.md` (this file), `docs/step7_dataset_model_decision.md` (DONE), `docs/step8_training_data_pipeline.md` (plan), `docs/step5_6_completion_report.md` (download results), `docs/data_download_plan.md`, `docs/databricks_connectivity.md`, `exploration/allen_brain_data_explorer.ipynb`, `exploration/databricks_connectivity_check.ipynb`. READ `CLAUDE.md` before writing code — no global vars, TDD, SOLID, uv, don't commit.

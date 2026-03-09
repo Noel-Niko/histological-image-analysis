@@ -1,4 +1,4 @@
-"""Download Allen Brain Institute data locally for DBFS upload.
+"""Download Allen Brain Institute data locally for Workspace upload.
 
 This script downloads all Allen data items that are blocked by the
 Databricks corporate firewall. See docs/data_download_plan.md for
@@ -8,8 +8,8 @@ Usage:
     python scripts/download_allen_data.py [--output-dir data/allen_brain_data]
 
 Data items downloaded:
-    1. CCFv3 annotation volume (25um) via AllenSDK
-    2. CCFv3 template volume (25um) via AllenSDK
+    1. CCFv3 annotation volume (25um) via direct HTTP
+    2. CCFv3 template volume (25um) via direct HTTP
     3. CCFv3 annotation volume (10um) via direct HTTP
     4. CCFv3 Nissl volume (10um) via direct HTTP
     5. Mouse atlas images (509 sections, downsample=4)
@@ -22,15 +22,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
-import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import nrrd
 import requests
-from allensdk.core.reference_space_cache import ReferenceSpaceCache
 
 
 # --- Constants ---
@@ -39,6 +36,8 @@ ALLEN_API_BASE = "https://api.brain-map.org/api/v2"
 ALLEN_DOWNLOAD_BASE = "https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf"
 
 CCFV3_URLS = {
+    "annotation_25.nrrd": f"{ALLEN_DOWNLOAD_BASE}/annotation/ccf_2017/annotation_25.nrrd",
+    "average_template_25.nrrd": f"{ALLEN_DOWNLOAD_BASE}/average_template/average_template_25.nrrd",
     "ara_nissl_10.nrrd": f"{ALLEN_DOWNLOAD_BASE}/ara_nissl/ara_nissl_10.nrrd",
     "annotation_10.nrrd": f"{ALLEN_DOWNLOAD_BASE}/annotation/ccf_2017/annotation_10.nrrd",
 }
@@ -152,68 +151,9 @@ def download_image(url: str, dest: Path) -> bool:
 # --- Download step functions ---
 
 
-def download_ccfv3_25um(ctx: DownloadContext) -> None:
-    """Step 5B: CCFv3 volumes at 25um via AllenSDK."""
-    log("=== Step 5B: CCFv3 25μm volumes (AllenSDK) ===")
-
-    annotation_dest = ctx.ccfv3_dir / "annotation_25.nrrd"
-    template_dest = ctx.ccfv3_dir / "template_25.nrrd"
-
-    if annotation_dest.exists() and template_dest.exists():
-        log("  SKIP (both exist)")
-        ctx.results.append(DownloadResult("CCFv3 annotation 25μm", "skipped", str(annotation_dest), annotation_dest.stat().st_size))
-        ctx.results.append(DownloadResult("CCFv3 template 25μm", "skipped", str(template_dest), template_dest.stat().st_size))
-        return
-
-    # AllenSDK downloads to its own cache dir, then we copy
-    cache_dir = ctx.output_dir / ".allensdk_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    manifest = str(cache_dir / "manifest.json")
-
-    try:
-        rsc = ReferenceSpaceCache(
-            resolution=25,
-            reference_space_key="annotation/ccf_2017",
-            manifest=manifest,
-        )
-
-        if not annotation_dest.exists():
-            log("  Downloading annotation volume (25μm)...")
-            annotation, _ = rsc.get_annotation_volume()
-            log(f"  Shape: {annotation.shape}, unique labels: {len(set(annotation.flat))}")
-            # AllenSDK saves as nrrd in cache; find and copy it
-            _copy_allensdk_nrrd(cache_dir, "annotation", annotation_dest)
-
-        if not template_dest.exists():
-            log("  Downloading template volume (25μm)...")
-            template, _ = rsc.get_template_volume()
-            log(f"  Shape: {template.shape}")
-            _copy_allensdk_nrrd(cache_dir, "template", template_dest)
-
-        for dest, name in [(annotation_dest, "CCFv3 annotation 25μm"), (template_dest, "CCFv3 template 25μm")]:
-            size = dest.stat().st_size if dest.exists() else 0
-            ctx.results.append(DownloadResult(name, "ok" if dest.exists() else "error", str(dest), size))
-
-    except Exception as e:
-        log(f"  ERROR: {e}")
-        ctx.results.append(DownloadResult("CCFv3 25μm volumes", "error", error=str(e)))
-
-
-def _copy_allensdk_nrrd(cache_dir: Path, pattern: str, dest: Path) -> None:
-    """Find AllenSDK cached nrrd file matching pattern and copy to dest."""
-    for f in cache_dir.rglob("*.nrrd"):
-        if pattern in f.name.lower():
-            shutil.copy2(f, dest)
-            log(f"  Copied {f.name} -> {dest.name}")
-            return
-    # If no nrrd found, list what's in cache for debugging
-    cached = list(cache_dir.rglob("*"))
-    log(f"  WARNING: No '{pattern}' nrrd found in cache. Files: {[str(f.name) for f in cached[:20]]}")
-
-
-def download_ccfv3_10um(ctx: DownloadContext) -> None:
-    """Step 5C: CCFv3 volumes at 10um via direct HTTP."""
-    log("=== Step 5C: CCFv3 10μm volumes (direct HTTP) ===")
+def download_ccfv3_volumes(ctx: DownloadContext) -> None:
+    """Steps 5B+5C: All CCFv3 volumes (25μm + 10μm) via direct HTTP."""
+    log("=== Steps 5B+5C: CCFv3 volumes (direct HTTP) ===")
 
     for filename, url in CCFV3_URLS.items():
         dest = ctx.ccfv3_dir / filename
@@ -500,8 +440,7 @@ def main(output_dir: str = DEFAULT_OUTPUT_DIR) -> None:
     log("")
 
     # Steps 5B-5G
-    download_ccfv3_25um(ctx)
-    download_ccfv3_10um(ctx)
+    download_ccfv3_volumes(ctx)
     mouse_images = download_mouse_atlas_images(ctx)
     download_mouse_svgs(ctx, mouse_images)
     download_human_atlas(ctx)

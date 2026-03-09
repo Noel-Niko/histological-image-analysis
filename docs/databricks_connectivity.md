@@ -2,7 +2,7 @@
 
 ## Summary
 
-All Allen Brain Institute endpoints are blocked by the Databricks corporate firewall. PyPI and HuggingFace are accessible. The workaround is to download Allen data locally and upload to DBFS.
+All Allen Brain Institute endpoints are blocked by the Databricks corporate firewall. PyPI and HuggingFace are accessible. The workaround is to download Allen data locally and upload to the Databricks Workspace.
 
 ---
 
@@ -89,7 +89,7 @@ Corporate firewall actively resets TCP connections (`errno 104`) to Allen Instit
 - `pip install` any HuggingFace dependency
 - Downloading models from HuggingFace Hub (DINOv2, SAM2, etc.)
 - All training/fine-tuning compute
-- Reading data already on DBFS or Unity Catalog
+- Reading data already on Workspace files or Unity Catalog
 
 ### What DOES NOT work on Databricks
 - Any HTTP call to `api.brain-map.org` (API queries, image downloads, SVG downloads)
@@ -99,9 +99,9 @@ Corporate firewall actively resets TCP connections (`errno 104`) to Allen Instit
 
 ---
 
-## Chosen Approach: Local Download → DBFS Upload
+## Chosen Approach: Local Download → Workspace Upload
 
-Download all Allen data on local machine (no firewall), then upload to DBFS for Databricks consumption.
+Download all Allen data on local machine (no firewall), then upload to Databricks Workspace for notebook consumption.
 
 ### Data to Download Locally
 
@@ -116,28 +116,28 @@ Download all Allen data on local machine (no firewall), then upload to DBFS for 
 | Structure ontology (graph ID 1) | Allen API | ~300 KB | `structure_graph_download/1.json` |
 | **Total** | | **~3 GB** | |
 
-### DBFS Upload
+### Workspace Upload
 
 ```bash
-# Upload to DBFS via CLI
-databricks fs cp ./local_allen_data/ dbfs:/FileStore/allen_brain_data/ --recursive --profile dev
+# Upload to Workspace via CLI
+databricks workspace import-dir data/allen_brain_data/ /Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology --profile dev
 ```
 
-### DBFS Paths (for Databricks notebooks)
+### Workspace Paths (for Databricks notebooks)
 
 ```python
-DBFS_ROOT = "/dbfs/FileStore/allen_brain_data"
+WS_ROOT = "/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology"
 
 # CCFv3 volumes
-ANNOTATION_25 = f"{DBFS_ROOT}/ccfv3/annotation_25.nrrd"
-TEMPLATE_25 = f"{DBFS_ROOT}/ccfv3/template_25.nrrd"
-NISSL_10 = f"{DBFS_ROOT}/ccfv3/ara_nissl_10.nrrd"
-ANNOTATION_10 = f"{DBFS_ROOT}/ccfv3/annotation_10.nrrd"
+ANNOTATION_25 = f"{WS_ROOT}/ccfv3/annotation_25.nrrd"
+TEMPLATE_25 = f"{WS_ROOT}/ccfv3/template_25.nrrd"
+NISSL_10 = f"{WS_ROOT}/ccfv3/ara_nissl_10.nrrd"
+ANNOTATION_10 = f"{WS_ROOT}/ccfv3/annotation_10.nrrd"
 
 # Mouse atlas images
-ATLAS_IMAGES_DIR = f"{DBFS_ROOT}/mouse_atlas/images/"       # {id}.jpg
-ATLAS_SVGS_DIR = f"{DBFS_ROOT}/mouse_atlas/svgs/"           # {id}.svg
-STRUCTURE_ONTOLOGY = f"{DBFS_ROOT}/ontology/structure_graph_1.json"
+ATLAS_IMAGES_DIR = f"{WS_ROOT}/mouse_atlas/images/"       # {id}.jpg
+ATLAS_SVGS_DIR = f"{WS_ROOT}/mouse_atlas/svgs/"           # {id}.svg
+STRUCTURE_ONTOLOGY = f"{WS_ROOT}/ontology/structure_graph_1.json"
 ```
 
 ---
@@ -146,7 +146,7 @@ STRUCTURE_ONTOLOGY = f"{DBFS_ROOT}/ontology/structure_graph_1.json"
 
 | Option | Pros | Cons | Verdict |
 |--------|------|------|---------|
-| **Local download → DBFS upload** | One-time effort, then all data on Databricks | Manual step, ~3 GB transfer | **CHOSEN** |
+| **Local download → Workspace upload** | One-time effort, then all data on Databricks | Manual step, ~6 GB transfer | **CHOSEN** |
 | **Google Colab for exploration** | No firewall, quick iteration | Separate platform, session timeouts, data transfer still needed | Viable backup |
 | **Firewall whitelist request** | Permanent fix | Depends on org process, may not be approved for personal project | Worth trying in parallel |
 
@@ -165,6 +165,6 @@ STRUCTURE_ONTOLOGY = f"{DBFS_ROOT}/ontology/structure_graph_1.json"
 
 **Connectivity:** All Allen Brain Institute domains (`api.brain-map.org`, `download.alleninstitute.org`) are BLOCKED by Databricks corporate firewall (`ConnectionResetError 104`). PyPI and HuggingFace PASS. Tested on dev workspace cluster `0306-215929-ai2l0t8w` via both UI and CLI Command Execution API. The cluster is interactive-only (`jobs: false`) — must use `/api/1.2/commands/execute` for programmatic runs, not `jobs submit`.
 
-**Plan:** Download ~3 GB of Allen data locally (CCFv3 volumes + mouse atlas images/SVGs + ontology), upload to `dbfs:/FileStore/allen_brain_data/` via `databricks fs cp --recursive --profile dev`. Databricks notebooks read from `/dbfs/FileStore/allen_brain_data/`. Model downloads from HuggingFace work directly on cluster.
+**Plan:** Download ~6 GB of Allen data locally (CCFv3 volumes + mouse/human atlas images/SVGs + ontology), upload to `/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology` via `databricks workspace import-dir --profile dev`. Notebooks read directly from the Workspace path. Model downloads from HuggingFace work directly on cluster.
 
 **CLI config:** `~/.databrickscfg` has profiles `[dev]`, `[stage]`, `[prod]`. Using `--profile dev`. CLI version 0.278.0.

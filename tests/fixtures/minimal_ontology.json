@@ -1,0 +1,212 @@
+{
+  "success": true,
+  "id": 0,
+  "start_row": 0,
+  "num_rows": 1,
+  "total_rows": 1,
+  "msg": [
+    {
+      "id": 997,
+      "atlas_id": 0,
+      "ontology_id": 1,
+      "acronym": "root",
+      "name": "root",
+      "color_hex_triplet": "FFFFFF",
+      "graph_order": 0,
+      "st_level": 0,
+      "hemisphere_id": 3,
+      "parent_structure_id": null,
+      "children": [
+        {
+          "id": 8,
+          "atlas_id": 0,
+          "ontology_id": 1,
+          "acronym": "grey",
+          "name": "Basic cell groups and regions",
+          "color_hex_triplet": "BFDAE3",
+          "graph_order": 1,
+          "st_level": 1,
+          "hemisphere_id": 3,
+          "parent_structure_id": 997,
+          "children": [
+            {
+              "id": 567,
+              "atlas_id": 70,
+              "ontology_id": 1,
+              "acronym": "CH",
+              "name": "Cerebrum",
+              "color_hex_triplet": "B0F0FF",
+              "graph_order": 2,
+              "st_level": 2,
+              "hemisphere_id": 3,
+              "parent_structure_id": 8,
+              "children": [
+                {
+                  "id": 688,
+                  "atlas_id": 85,
+                  "ontology_id": 1,
+                  "acronym": "CTX",
+                  "name": "Cerebral cortex",
+                  "color_hex_triplet": "B0FFB8",
+                  "graph_order": 3,
+                  "st_level": 3,
+                  "hemisphere_id": 3,
+                  "parent_structure_id": 567,
+                  "children": [
+                    {
+                      "id": 695,
+                      "atlas_id": 86,
+                      "ontology_id": 1,
+                      "acronym": "CTXpl",
+                      "name": "Cortical plate",
+                      "color_hex_triplet": "70FF70",
+                      "graph_order": 4,
+                      "st_level": 4,
+                      "hemisphere_id": 3,
+                      "parent_structure_id": 688,
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": 343,
+              "atlas_id": 40,
+              "ontology_id": 1,
+              "acronym": "BS",
+              "name": "Brain stem",
+              "color_hex_triplet": "FF7080",
+              "graph_order": 100,
+              "st_level": 2,
+              "hemisphere_id": 3,
+              "parent_structure_id": 8,
+              "children": [
+                {
+                  "id": 313,
+                  "atlas_id": 35,
+                  "ontology_id": 1,
+                  "acronym": "MB",
+                  "name": "Midbrain",
+                  "color_hex_triplet": "FF6090",
+                  "graph_order": 101,
+                  "st_level": 3,
+                  "hemisphere_id": 3,
+                  "parent_structure_id": 343,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": 512,
+              "atlas_id": 60,
+              "ontology_id": 1,
+              "acronym": "CB",
+              "name": "Cerebellum",
+              "color_hex_triplet": "F0F080",
+              "graph_order": 200,
+              "st_level": 2,
+              "hemisphere_id": 3,
+              "parent_structure_id": 8,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": 1009,
+          "atlas_id": 691,
+          "ontology_id": 1,
+          "acronym": "fiber tracts",
+          "name": "fiber tracts",
+          "color_hex_triplet": "CCCCCC",
+          "graph_order": 300,
+          "st_level": 1,
+          "hemisphere_id": 3,
+          "parent_structure_id": 997,
+          "children": [
+            {
+              "id": 784,
+              "atlas_id": 95,
+              "ontology_id": 1,
+              "acronym": "cc",
+              "name": "corpus callosum",
+              "color_hex_triplet": "CCCCCC",
+              "graph_order": 301,
+              "st_level": 2,
+              "hemisphere_id": 3,
+              "parent_structure_id": 1009,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": 73,
+          "atlas_id": 716,
+          "ontology_id": 1,
+          "acronym": "VS",
+          "name": "ventricular systems",
+          "color_hex_triplet": "AAAAAA",
+          "graph_order": 400,
+          "st_level": 1,
+          "hemisphere_id": 3,
+          "parent_structure_id": 997,
+          "children": [
+            {
+              "id": 81,
+              "atlas_id": 717,
+              "ontology_id": 1,
+              "acronym": "VL",
+              "name": "lateral ventricle",
+              "color_hex_triplet": "AAAAAA",
+              "graph_order": 401,
+              "st_level": 2,
+              "hemisphere_id": 3,
+              "parent_structure_id": 73,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": 1024,
+          "atlas_id": 693,
+          "ontology_id": 1,
+          "acronym": "grv",
+          "name": "grooves",
+          "color_hex_triplet": "AAAAAA",
+          "graph_order": 500,
+          "st_level": 1,
+          "hemisphere_id": 3,
+          "parent_structure_id": 997,
+          "children": [
+            {
+              "id": 1025,
+              "atlas_id": 694,
+              "ontology_id": 1,
+              "acronym": "grv-of-cc",
+              "name": "grooves of the cerebral cortex",
+              "color_hex_triplet": "AAAAAA",
+              "graph_order": 501,
+              "st_level": 2,
+              "hemisphere_id": 3,
+              "parent_structure_id": 1024,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": 304325711,
+          "atlas_id": null,
+          "ontology_id": 1,
+          "acronym": "retina",
+          "name": "retina",
+          "color_hex_triplet": "7F2E7E",
+          "graph_order": 600,
+          "st_level": 1,
+          "hemisphere_id": 3,
+          "parent_structure_id": 997,
+          "children": []
+        }
+      ]
+    }
+  ]
+}
