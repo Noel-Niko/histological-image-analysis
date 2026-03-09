@@ -1319,7 +1319,7 @@ wheels = [
 [[package]]
 name = "histological-image-analysis"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "allensdk" },
     { name = "fiftyone" },

@@ -210,11 +210,15 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
    - Final target domain is **autofluorescence** (not just Nissl). Training progresses Nissl → autofluorescence.
    - Granularity: coarse (~5 classes) → fine (~672 classes)
    - Human Atlas: 14,566 images, 6 donors. Treatment filter `'NISSL'` (UPPERCASE).
-8. **Build training data pipeline** — IN PROGRESS (planning complete, code not started). See `docs/step8_training_data_pipeline.md`.
-   - 4 components: ontology grouper, CCFv3 slicer, SVG rasterizer, PyTorch dataset
-   - Code goes in `src/histological_image_analysis/` with TDD tests in `tests/`
-   - Open questions: SVG rasterization library, tiling strategy, storage format, split strategy
-9. **Build fine-tuning notebook** — load chosen model, attach segmentation head, train on Allen data
+8. ~~Build training data pipeline~~ **DONE**. See `docs/step8_implementation_plan.md`.
+   - 4 components built with TDD: `ontology.py`, `ccfv3_slicer.py`, `svg_rasterizer.py`, `dataset.py`
+   - Code in `src/histological_image_analysis/`, tests in `tests/` — **61/61 tests pass**
+   - Resolved: svgpathtools+PIL for SVG, random crop train + tiled eval, on-the-fly NRRD, spatial AP split
+   - Ontology correction: root(997)→grey(8)→{CH(567),BS(343),CB(512)} at depth 2, not depth 1
+   - Real ontology smoke test: 1,327 structures, 6 coarse classes verified
+   - **JFrog Artifactory reminder:** Model weights must be manually added to JFrog before Step 9 on Databricks
+   - **Security:** `.claude/settings.local.json` had Databricks token — added `.claude/` to `.gitignore`, token needs rotation
+9. **Build fine-tuning notebook** — load chosen model, attach segmentation head, train on Allen data. Deploy: install src/ wheel on cluster + thin notebook.
 10. **Evaluate** — test on held-out Mouse Atlas sections, measure per-structure IoU
 
 ---
@@ -235,6 +239,14 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Step 7 (dataset+model):** DONE. DINOv2-Large + UperNet. Final goal: autofluorescence. Training: Nissl → autofluorescence, coarse (5) → fine (672). Human Atlas RESOLVED (`'NISSL'` uppercase). Details: `docs/step7_dataset_model_decision.md`.
 
-**Step 8 (training data pipeline):** Planning research COMPLETE, code NOT STARTED. Full plan at `docs/step8_training_data_pipeline.md`. 4 components: ontology grouper, CCFv3 volume slicer (must handle float32 nissl normalization), SVG rasterizer, PyTorch dataset. Needs `torch`, `transformers`, `svgpathtools`, `Pillow` added to deps. Open questions: SVG rasterization lib, 10μm tiling strategy, storage format, train/val split approach.
+**Step 8 (training data pipeline):** DONE. 4 components in `src/histological_image_analysis/`: `ontology.py` (OntologyMapper — coarse/depth/full mappings, ancestor-chain algorithm), `ccfv3_slicer.py` (CCFv3Slicer — NRRD loading, float32/uint16 normalization, spatial AP split, on-the-fly slicing), `svg_rasterizer.py` (SVGRasterizer — svgpathtools bezier→polygon, PIL rasterization, nearest-neighbor resize), `dataset.py` (BrainSegmentationDataset — padding, random/center crop 518×518, augmentation, ImageNet normalization, outputs {"pixel_values": (3,518,518), "labels": (518,518)}). Tests in `tests/` — 61/61 pass. Deps added: torch, torchvision, transformers, Pillow, svgpathtools, numpy, pytest. Plan: `docs/step8_implementation_plan.md`.
 
-**Repo files:** `docs/progress.md` (this file), `docs/step7_dataset_model_decision.md` (DONE), `docs/step8_training_data_pipeline.md` (plan), `docs/step5_6_completion_report.md` (download results), `docs/data_download_plan.md`, `docs/databricks_connectivity.md`, `exploration/allen_brain_data_explorer.ipynb`, `exploration/databricks_connectivity_check.ipynb`. READ `CLAUDE.md` before writing code — no global vars, TDD, SOLID, uv, don't commit.
+**Ontology correction:** Root(997) depth-1 children are grey(8), fiber tracts(1009), VS(73), grooves(1024), retina(304325711). Cerebrum(567)/BS(343)/CB(512) are depth-2 under grey(8). Coarse mapping uses ancestor-chain walking, not depth. Real data: 1,327 structures → 6 coarse classes (637 Cerebrum, 375 BS, 87 CB, 191 fiber, 12 VS, 25 background).
+
+**Security action needed:** `.claude/settings.local.json` contains Databricks API token in git history (3 commits on `preparation` branch). `.claude/` added to `.gitignore`. Token must be rotated. History must be rewritten to remove the secret before pushing.
+
+**JFrog Artifactory (Step 9):** Model weights (`facebook/dinov2-large`) must be manually added to JFrog by user before loading on Databricks. Code uses standard `from_pretrained()` so JFrog mirror swap is seamless.
+
+**Deployment strategy:** src/ package installed as wheel on Databricks cluster. Training notebook (Step 9) imports from installed package — thin notebook for orchestration + visualization only. No UDF/Spark concern (single-node PyTorch).
+
+**Repo files:** `docs/progress.md` (this file), `docs/step8_implementation_plan.md` (DONE — implementation tracker), `docs/step8_training_data_pipeline.md` (original plan), `docs/step7_dataset_model_decision.md` (DONE), `docs/step5_6_completion_report.md` (download results), `docs/data_download_plan.md`, `docs/databricks_connectivity.md`, `exploration/allen_brain_data_explorer.ipynb`, `exploration/databricks_connectivity_check.ipynb`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset}.py` + `tests/conftest.py` + `tests/fixtures/`.

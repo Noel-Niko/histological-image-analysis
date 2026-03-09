@@ -22,5 +22,8 @@ python/
 .DS_Store
 Thumbs.db
 
+# Claude Code local settings (may contain secrets in permission history)
+.claude/
+
 # Environment
 .env
