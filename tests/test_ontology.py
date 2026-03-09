@@ -102,6 +102,16 @@ class TestCoarseMapping:
         assert names[5] == "ventricular systems"
 
 
+    def test_depth_mapping_names_not_coarse(self, minimal_ontology_path):
+        """Depth-1 mapping should NOT return coarse class names."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        depth_mapping = mapper.build_depth_mapping(target_depth=1)
+        names = mapper.get_class_names(depth_mapping)
+        # Depth-1 ancestors include "Basic cell groups and regions" (id=8),
+        # not "Cerebrum" — should not be misidentified as coarse
+        assert "Cerebrum" not in names
+
+
 class TestFullMapping:
     """Test fine-grained mapping with contiguous class IDs."""
 
@@ -139,6 +149,25 @@ class TestFullMapping:
         class_ids = [mapping[sid] for sid in struct_ids]
         # Class IDs should be monotonically increasing for sorted structure IDs
         assert class_ids == sorted(class_ids)
+
+
+class TestGetNumLabels:
+    """Test num_labels helper for UperNet config."""
+
+    def test_coarse_num_labels(self, minimal_ontology_path):
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_coarse_mapping()
+        assert mapper.get_num_labels(mapping) == 6  # classes 0-5
+
+    def test_full_num_labels(self, minimal_ontology_path):
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_full_mapping()
+        # 15 structures → classes 1..15, plus background 0 → 16
+        assert mapper.get_num_labels(mapping) == 16
+
+    def test_empty_mapping(self, minimal_ontology_path):
+        mapper = OntologyMapper(minimal_ontology_path)
+        assert mapper.get_num_labels({}) == 0
 
 
 class TestRemapMask:

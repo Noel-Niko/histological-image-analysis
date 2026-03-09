@@ -1,9 +1,10 @@
 # Step 8: Training Data Pipeline — Plan & Status
 
-## Status: NOT STARTED (planning research complete)
+## Status: COMPLETE
 
 **Last updated:** 2026-03-09
-**Depends on:** Steps 5-6 DONE (20.87 GB downloaded + uploaded). Step 6B (cluster verification) still pending. Pipeline code can be written and tested locally against `data/allen_brain_data/` now.
+**Depends on:** Steps 5-6 DONE (20.87 GB downloaded + uploaded). Step 6B (cluster verification) still pending.
+**Implementation:** 4 components in `src/histological_image_analysis/`, 65 tests in `tests/`. See `docs/step8_implementation_plan.md` for detailed tracker.
 
 ---
 
@@ -15,7 +16,7 @@ Build a training data pipeline that converts raw Allen Brain data into `(image_t
 1. **CCFv3 3D volume slicer** — slice NRRD volumes into 2D coronal slices, tile to model input size
 2. **Mouse Atlas SVG rasterizer** — convert SVG annotations into pixel-level segmentation masks for 2D atlas sections
 
-Both pipelines must support the coarse (5-class) → fine (672-class) structure grouping via the ontology tree.
+Both pipelines must support the coarse (6-class) → fine (1,327-class) structure grouping via the ontology tree.
 
 ---
 
@@ -134,23 +135,37 @@ flat_structures = flatten_ontology(ontology_data["msg"][0])
 }
 ```
 
-**Coarse grouping (Phase 1 — 5 classes):**
+**Corrected coarse grouping (Phase 1 — 6 classes including background):**
 
-The ontology root (`id=997`, "Brain") has these depth-1 children:
+> **Correction:** The original plan incorrectly described Cerebrum/BS/CB as depth-1 children of root. They are actually depth-2 under "Basic cell groups and regions" (grey, id=8). The hierarchy is:
+> ```
+> Root (997)
+> ├── Basic cell groups and regions [grey] (8)      ← depth 1
+> │   ├── Cerebrum [CH] (567)                       ← depth 2
+> │   ├── Brain stem [BS] (343)                     ← depth 2
+> │   └── Cerebellum [CB] (512)                     ← depth 2
+> ├── fiber tracts (1009)                           ← depth 1
+> ├── ventricular systems [VS] (73)                 ← depth 1
+> ├── grooves [grv] (1024)                          ← depth 1 (→ background)
+> └── retina (304325711)                            ← depth 1 (→ background)
+> ```
+
 | Class ID | Name | Ontology ID | Notes |
 |----------|------|-------------|-------|
-| 0 | Background | 0 | Pixels outside brain |
+| 0 | Background | 0 | Pixels outside brain + grooves + retina |
 | 1 | Cerebrum | 567 | Cortex, hippocampus, basal ganglia, etc. |
 | 2 | Brain stem | 343 | Midbrain, pons, medulla |
 | 3 | Cerebellum | 512 | Cerebellar cortex + nuclei |
 | 4 | Fiber tracts | 1009 | White matter bundles |
 | 5 | Ventricular system | 73 | Ventricles + choroid plexus |
 
-**Mapping fine → coarse:** Walk each structure's `parent_id` chain up to depth 1. Build a lookup dict: `{fine_structure_id: coarse_class_id}`. Apply to annotation volume via vectorized numpy indexing.
+**Mapping fine → coarse (ancestor-chain algorithm):** Walk each structure's `parent_structure_id` chain upward until hitting a known coarse ancestor (567, 343, 512, 1009, 73) or an excluded ancestor (1024, 304325711 → background). This is NOT depth-based — it's ancestor-chain-based. See `ontology.py:_find_coarse_class()`.
+
+**num_labels for UperNet:** `get_num_labels(mapping)` returns `max(mapping.values()) + 1`. For coarse: 6. For full: 1,328.
 
 ### DINOv2 + UperNet Input Requirements
 
-**Model:** HuggingFace `transformers` likely provides `Dinov2ForSemanticSegmentation` or similar. If not available as a pre-built class, attach UperNet head manually via `mmsegmentation` or custom code.
+**Model:** No `Dinov2ForSemanticSegmentation` class exists in `transformers`. Use `UperNetForSemanticSegmentation` with `Dinov2Backbone`. Config: `UperNetConfig(backbone_config=Dinov2Config(), num_labels=N)`.
 
 **Input requirements:**
 - DINOv2-Large native resolution: **518×518** (patch size 14, 37×37 patches)
@@ -246,7 +261,7 @@ tests/
 
 **Per CLAUDE.md:** TDD — write tests first. No global variables. Use dependency injection.
 
-**Per CLAUDE.md Databricks exception:** The eventual training notebook (Step 9) will use inline functions, NOT imports from `src/`. But `src/` modules will be tested locally and can be uploaded to Workspace alongside data if needed.
+**Deployment (resolved):** Install `src/` package as a wheel on Databricks cluster. Training notebook (Step 9) imports from installed package — thin notebook for orchestration + visualization only. No UDF/Spark concern (single-node PyTorch).
 
 ---
 
@@ -302,12 +317,12 @@ annotation_25.nrrd ─┘                                   │
 
 ---
 
-## Open Questions for User
+## Open Questions — RESOLVED
 
-1. **SVG rasterization library:** `svgpathtools` parses bezier curves cleanly but doesn't rasterize directly. Alternative: use `cairosvg` to render SVG → PNG → parse colors. Which approach is preferred?
-2. **10μm volume tiling:** The 10μm slices are ~800×1140. Options: (a) resize to 518×518 (loses detail), (b) tile into overlapping 518×518 patches (more training samples, keeps detail), (c) random crop 518×518 during training. Recommendation: (c) random crop for training, (b) tiled inference for evaluation.
-3. **Data storage format:** Save pre-processed tiles as individual files (PNG + NPY), or load from NRRD on-the-fly? On-the-fly is simpler but slower. Pre-processed is faster but takes disk space.
-4. **Train/val/test split:** Split by AP position (spatial), or random? Spatial split prevents data leakage from adjacent slices being too similar.
+1. **SVG rasterization library:** → `svgpathtools` + PIL. Parse bezier → sample points → `ImageDraw.polygon()`.
+2. **10μm volume tiling:** → Random crop 518×518 (train) + tiled inference (eval).
+3. **Data storage format:** → On-the-fly from NRRD (volumes loaded into memory).
+4. **Train/val/test split:** → Spatial by AP position (80/10/10). Slices with <10% brain pixels skipped.
 
 ---
 
@@ -335,15 +350,9 @@ If context is lost, read these files in order:
 4. `docs/step5_6_completion_report.md` — verified data shapes, dtypes, Databricks paths
 5. `docs/step7_dataset_model_decision.md` — model + dataset decisions (DONE)
 
-**Next actions when resuming:**
-1. Steps 5-6 are DONE (20.87 GB downloaded + uploaded). Step 6B (cluster verification) still pending — not blocking for local development.
-2. Resolve open questions above with user (SVG lib, tiling strategy, storage format, split strategy).
-3. Add `torch`, `transformers`, `svgpathtools`, `Pillow` to `pyproject.toml` and `uv lock`.
-4. Create `src/histological_image_analysis/` package structure.
-5. Build Component 1 (ontology loader/grouper) first — it's a dependency for all other components and has no external data dependency.
-6. Build Components 2-4 following TDD.
-7. Verify pipeline produces valid `(image, mask)` pairs with a quick visualization notebook.
-8. Run Step 6B verification on Databricks cluster when ready.
+**Step 8 is COMPLETE.** All 4 components built with TDD. See `docs/step8_implementation_plan.md` for the full implementation tracker with change log.
+
+**Next:** Step 9 (fine-tuning notebook). JFrog Artifactory: model weights must be manually added before loading on Databricks.
 
 **Databricks paths (from `docs/step5_6_completion_report.md`):**
 ```python

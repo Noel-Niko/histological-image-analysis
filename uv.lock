@@ -1321,19 +1321,10 @@ name = "histological-image-analysis"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "allensdk" },
-    { name = "fiftyone" },
-    { name = "ipykernel" },
-    { name = "jupyter" },
-    { name = "jupyterlab" },
-    { name = "kagglehub" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pillow" },
-    { name = "pydicom" },
     { name = "pynrrd" },
-    { name = "requests" },
-    { name = "rt-utils" },
     { name = "svgpathtools" },
     { name = "torch" },
     { name = "torchvision" },
@@ -1344,29 +1335,40 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
+exploration = [
+    { name = "allensdk" },
+    { name = "fiftyone" },
+    { name = "ipykernel" },
+    { name = "jupyter" },
+    { name = "jupyterlab" },
+    { name = "kagglehub" },
+    { name = "pydicom" },
+    { name = "requests" },
+    { name = "rt-utils" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "allensdk", specifier = ">=0.16.3" },
-    { name = "fiftyone", specifier = ">=1.13.3" },
-    { name = "ipykernel", specifier = ">=7.2.0" },
-    { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "jupyterlab", specifier = ">=4.5.5" },
-    { name = "kagglehub", specifier = ">=1.0.0" },
+    { name = "allensdk", marker = "extra == 'exploration'", specifier = ">=0.16.3" },
+    { name = "fiftyone", marker = "extra == 'exploration'", specifier = ">=1.13.3" },
+    { name = "ipykernel", marker = "extra == 'exploration'", specifier = ">=7.2.0" },
+    { name = "jupyter", marker = "extra == 'exploration'", specifier = ">=1.1.1" },
+    { name = "jupyterlab", marker = "extra == 'exploration'", specifier = ">=4.5.5" },
+    { name = "kagglehub", marker = "extra == 'exploration'", specifier = ">=1.0.0" },
     { name = "matplotlib", specifier = ">=3.5" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "pillow", specifier = ">=10.0" },
-    { name = "pydicom", specifier = "==2.4.4" },
+    { name = "pydicom", marker = "extra == 'exploration'", specifier = "==2.4.4" },
     { name = "pynrrd", specifier = ">=1.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "requests", specifier = ">=2.32.5" },
-    { name = "rt-utils", specifier = ">=1.2.7" },
+    { name = "requests", marker = "extra == 'exploration'", specifier = ">=2.32.5" },
+    { name = "rt-utils", marker = "extra == 'exploration'", specifier = ">=1.2.7" },
     { name = "svgpathtools", specifier = ">=1.6" },
     { name = "torch", specifier = ">=2.0" },
     { name = "torchvision", specifier = ">=0.15" },
     { name = "transformers", specifier = ">=4.40" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["exploration", "dev"]
 
 [[package]]
 name = "hpack"

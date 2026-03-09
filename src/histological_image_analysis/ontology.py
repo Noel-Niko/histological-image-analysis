@@ -168,9 +168,12 @@ class OntologyMapper:
         max_class = max(mapping.values()) if mapping else 0
         names = ["Background"] * (max_class + 1)
 
-        # Check if this is the coarse mapping
-        mapping_values = set(mapping.values())
-        if mapping_values <= set(_COARSE_CLASS_NAMES.keys()):
+        # Check if this is the coarse mapping by verifying anchor points
+        is_coarse = all(
+            mapping.get(sid) == cid
+            for sid, cid in _COARSE_ANCESTORS.items()
+        )
+        if is_coarse:
             for class_id, name in _COARSE_CLASS_NAMES.items():
                 if class_id <= max_class:
                     names[class_id] = name
@@ -187,6 +190,18 @@ class OntologyMapper:
                     names[cid] = node["name"]
 
         return names
+
+    @staticmethod
+    def get_num_labels(mapping: dict[int, int]) -> int:
+        """Return the number of labels (including background class 0).
+
+        Use this for ``UperNetConfig(num_labels=...)`` in Step 9.
+        For coarse mapping (classes 0-5), returns 6.
+        For full mapping (classes 0-1327), returns 1328.
+        """
+        if not mapping:
+            return 0
+        return max(mapping.values()) + 1
 
     def remap_mask(
         self, mask: np.ndarray, mapping: dict[int, int]

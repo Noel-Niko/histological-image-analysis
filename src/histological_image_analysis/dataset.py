@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from PIL import Image
 from torch.utils.data import Dataset
 
 from histological_image_analysis.ccfv3_slicer import CCFv3Slicer
@@ -153,12 +154,27 @@ class BrainSegmentationDataset(Dataset):
         """Apply random augmentations to image and mask.
 
         - Horizontal flip (50% probability)
+        - Rotation ±15° (fill value 0 for out-of-bounds pixels)
         - Color jitter on image only (brightness ±0.2, contrast ±0.2)
         """
         # Horizontal flip
         if np.random.random() < 0.5:
             image = np.flip(image, axis=1).copy()
             mask = np.flip(mask, axis=1).copy()
+
+        # Rotation ±15°
+        angle = np.random.uniform(-15, 15)
+        if abs(angle) > 0.5:
+            # Image: bilinear interpolation, fill with 0
+            img_pil = Image.fromarray(image)
+            image = np.array(
+                img_pil.rotate(angle, resample=Image.BILINEAR, fillcolor=0)
+            )
+            # Mask: nearest-neighbor interpolation, fill with 0
+            mask_pil = Image.fromarray(mask.astype(np.int32), mode="I")
+            mask = np.array(
+                mask_pil.rotate(angle, resample=Image.NEAREST, fillcolor=0)
+            ).astype(np.int64)
 
         # Color jitter (image only)
         image = image.astype(np.float32)

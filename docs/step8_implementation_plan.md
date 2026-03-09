@@ -200,7 +200,7 @@ def build_coarse_mapping(self) -> dict[int, int]:
 ### Step 5: Integration & Documentation
 - [x] Full test suite passes: `uv run pytest tests/ -v` — **61/61 passed**
 - [x] Smoke test with real ontology data — 1,327 structures, 6 coarse classes, 1,327 fine classes
-- [ ] Update `docs/step8_training_data_pipeline.md` with corrections
+- [x] Update `docs/step8_training_data_pipeline.md` with corrections
 - [x] Update `docs/progress.md`
 
 ---
@@ -233,6 +233,7 @@ tests/
 | 2026-03-09 | Plan review: 14 issues addressed. Added: ancestor-chain algorithm, axis specs, SVG coord handling, background fill, data validation, deterministic fine mapping, augmentation fill values, error handling, fixtures structure, class imbalance note. |
 | 2026-03-09 | All 4 components implemented with TDD. 61/61 tests pass. Smoke test with real ontology: 1,327 structures, coarse mapping verified (637 Cerebrum, 375 BS, 87 CB, 191 fiber, 12 VS, 25 background). |
 | 2026-03-09 | Security fix: `.claude/settings.local.json` (Databricks token) removed from all git history via `filter-branch`. Force-pushed master + preparation. `.claude/` in `.gitignore`. |
+| 2026-03-09 | Post-review fixes: (1) Added ±15° rotation augmentation to dataset.py. (2) Fixed get_class_names coarse-detection heuristic (anchor-point check). (3) Added get_num_labels() helper. (4) Separated exploration deps from core in pyproject.toml. (5) Fixed progress.md compact context ("coarse (6) → fine (1,327)"). (6) Updated step8_training_data_pipeline.md with all corrections. Test count: 61→65. |
 
 ---
 

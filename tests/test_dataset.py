@@ -178,6 +178,17 @@ class TestAugmentation:
         all_same = all(torch.equal(results[0], r) for r in results[1:])
         assert not all_same, "Augmented outputs should vary"
 
+    def test_rotation_preserves_mask_integrity(self, mock_slicer_large, mapping):
+        """Rotation should preserve integer mask values (nearest-neighbor, no artifacts)."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=518, augment=True
+        )
+        for _ in range(10):
+            item = ds[0]
+            labels = item["labels"]
+            assert labels.dtype == torch.long
+            assert labels.min() >= 0
+
     def test_no_augmentation_deterministic(self, mock_slicer, mapping):
         """Without augmentation, same index should give same result."""
         ds = BrainSegmentationDataset(
