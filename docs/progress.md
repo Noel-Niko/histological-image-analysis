@@ -217,7 +217,7 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
    - Ontology correction: root(997)→grey(8)→{CH(567),BS(343),CB(512)} at depth 2, not depth 1
    - Real ontology smoke test: 1,327 structures, 6 coarse classes verified
    - **JFrog Artifactory reminder:** Model weights must be manually added to JFrog before Step 9 on Databricks
-   - **Security:** `.claude/settings.local.json` had Databricks token — added `.claude/` to `.gitignore`, token needs rotation
+   - **Security:** `.claude/settings.local.json` had Databricks token — RESOLVED: `.claude/` added to `.gitignore`, history rewritten with `filter-branch`, force-pushed both branches, token rotation still recommended
 9. **Build fine-tuning notebook** — load chosen model, attach segmentation head, train on Allen data. Deploy: install src/ wheel on cluster + thin notebook.
 10. **Evaluate** — test on held-out Mouse Atlas sections, measure per-structure IoU
 
@@ -243,7 +243,7 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Ontology correction:** Root(997) depth-1 children are grey(8), fiber tracts(1009), VS(73), grooves(1024), retina(304325711). Cerebrum(567)/BS(343)/CB(512) are depth-2 under grey(8). Coarse mapping uses ancestor-chain walking, not depth. Real data: 1,327 structures → 6 coarse classes (637 Cerebrum, 375 BS, 87 CB, 191 fiber, 12 VS, 25 background).
 
-**Security action needed:** `.claude/settings.local.json` contains Databricks API token in git history (3 commits on `preparation` branch). `.claude/` added to `.gitignore`. Token must be rotated. History must be rewritten to remove the secret before pushing.
+**Security — RESOLVED:** `.claude/settings.local.json` contained Databricks API token. Fixed: `git filter-branch` rewrote all commits on both `master` and `preparation` branches to remove the file. Force-pushed both branches. `.claude/` in `.gitignore`. Token rotation still recommended as a precaution (data was transmitted to GitHub servers before rejection).
 
 **JFrog Artifactory (Step 9):** Model weights (`facebook/dinov2-large`) must be manually added to JFrog by user before loading on Databricks. Code uses standard `from_pretrained()` so JFrog mirror swap is seamless.
 

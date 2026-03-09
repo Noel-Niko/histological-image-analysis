@@ -232,6 +232,7 @@ tests/
 | 2026-03-09 | Plan created. Ontology depth correction discovered. Open questions resolved. |
 | 2026-03-09 | Plan review: 14 issues addressed. Added: ancestor-chain algorithm, axis specs, SVG coord handling, background fill, data validation, deterministic fine mapping, augmentation fill values, error handling, fixtures structure, class imbalance note. |
 | 2026-03-09 | All 4 components implemented with TDD. 61/61 tests pass. Smoke test with real ontology: 1,327 structures, coarse mapping verified (637 Cerebrum, 375 BS, 87 CB, 191 fiber, 12 VS, 25 background). |
+| 2026-03-09 | Security fix: `.claude/settings.local.json` (Databricks token) removed from all git history via `filter-branch`. Force-pushed master + preparation. `.claude/` in `.gitignore`. |
 
 ---
 
