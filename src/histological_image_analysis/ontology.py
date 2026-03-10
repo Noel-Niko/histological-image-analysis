@@ -179,10 +179,18 @@ class OntologyMapper:
                     names[class_id] = name
         else:
             # Build reverse mapping: class_id → structure_id
+            # Prefer shallowest-depth structure for naming (e.g., "Cerebrum"
+            # at depth 2, not "Cortical plate" at depth 4).
             class_to_sid: dict[int, int] = {}
             for sid, cid in mapping.items():
-                if cid not in class_to_sid:
+                if cid == 0:
+                    continue  # background already named above
+                current = class_to_sid.get(cid)
+                if current is None:
                     class_to_sid[cid] = sid
+                else:
+                    if self._node_by_id[sid]["depth"] < self._node_by_id[current]["depth"]:
+                        class_to_sid[cid] = sid
 
             for cid, sid in class_to_sid.items():
                 node = self._node_by_id.get(sid)

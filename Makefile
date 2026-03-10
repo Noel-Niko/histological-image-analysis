@@ -9,8 +9,12 @@ WHEEL_NAME         := histological_image_analysis-0.1.0-py3-none-any.whl
 WHEEL_PATH         := dist/$(WHEEL_NAME)
 NOTEBOOK_SRC       := notebooks/step9_finetune_coarse.ipynb
 NOTEBOOK_DEST      := $(WORKSPACE_BASE)/notebooks/step9_finetune_coarse
+NOTEBOOK_D2_SRC    := notebooks/step10_finetune_depth2.ipynb
+NOTEBOOK_D2_DEST   := $(WORKSPACE_BASE)/notebooks/step10_depth2
+NOTEBOOK_FULL_SRC  := notebooks/step10_finetune_full.ipynb
+NOTEBOOK_FULL_DEST := $(WORKSPACE_BASE)/notebooks/step10_full
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy validate help
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy validate help
 
 # ── Local Development ──────────────────────────────────────────────────
 
@@ -46,7 +50,25 @@ deploy-notebook: ## Upload training notebook to Databricks workspace
 		--profile $(DATABRICKS_PROFILE)
 	@echo "Notebook uploaded to $(NOTEBOOK_DEST)"
 
-deploy: deploy-wheel deploy-notebook ## Full deployment (wheel + notebook)
+deploy-notebook-depth2: ## Upload depth-2 training notebook to workspace
+	databricks workspace mkdirs $(dir $(NOTEBOOK_D2_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_D2_DEST) \
+		--file $(NOTEBOOK_D2_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_D2_DEST)"
+
+deploy-notebook-full: ## Upload full-mapping training notebook to workspace
+	databricks workspace mkdirs $(dir $(NOTEBOOK_FULL_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_FULL_DEST) \
+		--file $(NOTEBOOK_FULL_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_FULL_DEST)"
+
+deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full ## Full deployment (wheel + all notebooks)
 	@echo ""
 	@echo "=== Deployment complete ==="
 	@echo ""
@@ -94,7 +116,7 @@ validate: ## Print staged validation checklist
 	@echo "Proceed to cells 5-7 for full training."
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .DEFAULT_GOAL := help

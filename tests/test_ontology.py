@@ -468,6 +468,117 @@ class TestRealAnnotationClassDistribution:
             "confirms spatial split root cause"
         )
 
+class TestGetClassNamesDepthMapping:
+    """Test get_class_names() with depth and full mappings.
+
+    The buggy implementation picks an arbitrary structure_id per class
+    (depends on set iteration order). For depth-2, class 4 could be
+    named "Cortical plate" instead of "Cerebrum". The fix prefers the
+    shallowest-depth structure for each class.
+    """
+
+    def test_depth2_names_use_ancestor_not_descendant(
+        self, minimal_ontology_path
+    ):
+        """Depth-2 class for Cerebrum should be named 'Cerebrum', not a descendant."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_depth_mapping(target_depth=2)
+        names = mapper.get_class_names(mapping)
+        # Cerebrum (567) is the depth-2 ancestor; descendants 688, 695 also
+        # map to the same class. The name should be "Cerebrum" (depth 2),
+        # NOT "Cerebral cortex" (depth 3) or "Cortical plate" (depth 4).
+        assert names[mapping[567]] == "Cerebrum"
+
+    def test_depth2_names_brainstem(self, minimal_ontology_path):
+        """Depth-2 class for Brain stem should be named 'Brain stem', not 'Midbrain'."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_depth_mapping(target_depth=2)
+        names = mapper.get_class_names(mapping)
+        assert names[mapping[343]] == "Brain stem"
+
+    def test_depth2_background_is_named(self, minimal_ontology_path):
+        """Background class (0) should always be named 'Background'."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_depth_mapping(target_depth=2)
+        names = mapper.get_class_names(mapping)
+        assert names[0] == "Background"
+
+    def test_full_mapping_each_structure_named(self, minimal_ontology_path):
+        """In full mapping, each class gets its own structure's name."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_full_mapping()
+        names = mapper.get_class_names(mapping)
+        for sid, cid in mapping.items():
+            expected_name = mapper.get_structure_name(sid)
+            assert names[cid] == expected_name, (
+                f"Class {cid} (sid={sid}) should be named '{expected_name}', "
+                f"got '{names[cid]}'"
+            )
+
+    @pytest.mark.skipif(
+        not REAL_ONTOLOGY_PATH.exists(),
+        reason="Real ontology file not present locally",
+    )
+    def test_real_depth2_names(self):
+        """Real ontology: depth-2 ancestors should have correct names."""
+        mapper = OntologyMapper(REAL_ONTOLOGY_PATH)
+        mapping = mapper.build_depth_mapping(target_depth=2)
+        names = mapper.get_class_names(mapping)
+        assert names[mapping[567]] == "Cerebrum"
+        assert names[mapping[343]] == "Brain stem"
+        assert names[mapping[512]] == "Cerebellum"
+
+
+class TestDepthMappingIntegration:
+    """Integration tests for depth-2 mapping class counts and coverage."""
+
+    def test_depth2_class_count_minimal(self, minimal_ontology_path):
+        """Minimal fixture: 6 depth-2 ancestors + background = 7 unique classes."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_depth_mapping(target_depth=2)
+        unique_classes = set(mapping.values())
+        assert len(unique_classes) == 7
+
+    def test_depth2_get_num_labels(self, minimal_ontology_path):
+        """get_num_labels should return 7 for minimal fixture depth-2 mapping."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_depth_mapping(target_depth=2)
+        assert mapper.get_num_labels(mapping) == 7
+
+    @pytest.mark.skipif(
+        not REAL_ONTOLOGY_PATH.exists(),
+        reason="Real ontology file not present locally",
+    )
+    def test_real_depth2_class_count(self):
+        """Real ontology: 18 depth-2 structures + background = 19 total classes."""
+        mapper = OntologyMapper(REAL_ONTOLOGY_PATH)
+        mapping = mapper.build_depth_mapping(target_depth=2)
+        assert mapper.get_num_labels(mapping) == 19
+
+    def test_depth2_all_structures_mapped(self, minimal_ontology_path):
+        """Every structure ID should have a mapping entry."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        mapping = mapper.build_depth_mapping(target_depth=2)
+        assert set(mapping.keys()) == mapper.all_structure_ids
+
+
+@pytest.mark.skipif(
+    not REAL_ONTOLOGY_PATH.exists() or not ANNOTATION_25_PATH.exists(),
+    reason="Real ontology or annotation_25.nrrd not present locally",
+)
+class TestRealAnnotationInterleaved:
+    """Validation that interleaved split fixes the Cerebrum NaN issue."""
+
+    @pytest.fixture(scope="class")
+    def real_annotation_data(self):
+        """Load 25μm annotation + ontology, build coarse mapping."""
+        import nrrd
+
+        mapper = OntologyMapper(REAL_ONTOLOGY_PATH)
+        annotation, _ = nrrd.read(str(ANNOTATION_25_PATH))
+        coarse_mapping = mapper.build_coarse_mapping()
+        return annotation, mapper, coarse_mapping
+
     def test_interleaved_split_has_cerebrum_in_all_splits(
         self, real_annotation_data
     ):
