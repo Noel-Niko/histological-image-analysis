@@ -218,7 +218,13 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
    - Real ontology smoke test: 1,327 structures, 6 coarse classes verified
    - **JFrog Artifactory reminder:** Model weights must be manually added to JFrog before Step 9 on Databricks
    - **Security:** `.claude/settings.local.json` had Databricks token — RESOLVED: `.claude/` added to `.gitignore`, history rewritten with `filter-branch`, force-pushed both branches, token rotation still recommended
-9. **Build fine-tuning notebook** — load chosen model, attach segmentation head, train on Allen data. Deploy: install src/ wheel on cluster + thin notebook.
+9. ~~Build fine-tuning infrastructure~~ **DONE**. See `docs/joyful-popping-planet.md` (Step 9 plan).
+   - `training.py`: 6 functions — `create_model`, `compute_metrics`, `make_compute_metrics`, `preprocess_logits_for_metrics`, `get_training_args`, `create_trainer`
+   - Key: `auxiliary_in_channels` must match backbone `hidden_size` in UperNetConfig
+   - Tests: 36 tests in `tests/test_training.py` — **102/102 full suite passes** (66 existing + 36 new)
+   - Notebook: `notebooks/step9_finetune_coarse.ipynb` — 7 cells (config, JFrog download, pipeline, model, train, eval+viz, save)
+   - References: `docs/references.md`
+   - **Pending:** Run notebook on Databricks (requires JFrog model weights + cluster access)
 10. **Evaluate** — test on held-out Mouse Atlas sections, measure per-structure IoU
 
 ---
@@ -249,4 +255,6 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Deployment strategy:** src/ package installed as wheel on Databricks cluster. Training notebook (Step 9) imports from installed package — thin notebook for orchestration + visualization only. No UDF/Spark concern (single-node PyTorch).
 
-**Repo files:** `docs/progress.md` (this file), `docs/step8_implementation_plan.md` (DONE — implementation tracker), `docs/step8_training_data_pipeline.md` (original plan), `docs/step7_dataset_model_decision.md` (DONE), `docs/step5_6_completion_report.md` (download results), `docs/data_download_plan.md`, `docs/databricks_connectivity.md`, `exploration/allen_brain_data_explorer.ipynb`, `exploration/databricks_connectivity_check.ipynb`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset}.py` + `tests/conftest.py` + `tests/fixtures/`.
+**Step 9 (training infrastructure):** DONE. `training.py` with 6 functions: `create_model` (DINOv2 backbone + UperNet head, freeze support, `auxiliary_in_channels` must match backbone hidden_size), `compute_metrics` (manual mIoU, no extra deps), `make_compute_metrics` (closure factory for Trainer), `preprocess_logits_for_metrics` (argmax to prevent eval OOM), `get_training_args` (critical: `remove_unused_columns=False`), `create_trainer` (wires everything). 36 tests, 102/102 full suite. Notebook: `notebooks/step9_finetune_coarse.ipynb` (7 cells — thin Databricks orchestration). References: `docs/references.md`. Pending: run on Databricks.
+
+**Repo files:** `docs/progress.md` (this file), `docs/joyful-popping-planet.md` (Step 9 plan — active tracker), `docs/step8_implementation_plan.md` (DONE), `docs/step8_training_data_pipeline.md` (original plan), `docs/step7_dataset_model_decision.md` (DONE), `docs/step5_6_completion_report.md` (download results), `docs/data_download_plan.md`, `docs/databricks_connectivity.md`, `docs/references.md`, `exploration/allen_brain_data_explorer.ipynb`, `exploration/databricks_connectivity_check.ipynb`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py` + `tests/conftest.py` + `tests/fixtures/`. Notebook: `notebooks/step9_finetune_coarse.ipynb`.

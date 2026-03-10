@@ -1321,6 +1321,7 @@ name = "histological-image-analysis"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "huggingface-hub" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pillow" },
@@ -1351,6 +1352,7 @@ exploration = [
 requires-dist = [
     { name = "allensdk", marker = "extra == 'exploration'", specifier = ">=0.16.3" },
     { name = "fiftyone", marker = "extra == 'exploration'", specifier = ">=1.13.3" },
+    { name = "huggingface-hub", specifier = ">=0.20" },
     { name = "ipykernel", marker = "extra == 'exploration'", specifier = ">=7.2.0" },
     { name = "jupyter", marker = "extra == 'exploration'", specifier = ">=1.1.1" },
     { name = "jupyterlab", marker = "extra == 'exploration'", specifier = ">=4.5.5" },
