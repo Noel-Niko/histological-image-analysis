@@ -159,6 +159,103 @@ class TestSpatialSplit:
         assert 5 <= len(splits["test"]) <= 15
 
 
+class TestInterleavedSplit:
+    """Test interleaved train/val/test splitting for class coverage."""
+
+    def test_interleaved_no_overlap(self, mapper, synthetic_volume):
+        """Train, val, and test sets must not share AP indices."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        splits = slicer.get_split_indices(split_strategy="interleaved")
+        train = set(splits["train"])
+        val = set(splits["val"])
+        test = set(splits["test"])
+        assert train & val == set()
+        assert train & test == set()
+        assert val & test == set()
+
+    def test_interleaved_covers_valid_slices(self, mapper, synthetic_volume):
+        """All valid slices should appear in some split."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        splits = slicer.get_split_indices(split_strategy="interleaved")
+        all_split = (
+            set(splits["train"]) | set(splits["val"]) | set(splits["test"])
+        )
+        # Should cover same valid indices as spatial split
+        spatial = slicer.get_split_indices(split_strategy="spatial")
+        spatial_all = (
+            set(spatial["train"]) | set(spatial["val"]) | set(spatial["test"])
+        )
+        assert all_split == spatial_all
+
+    def test_interleaved_fractions_approximately_correct(self, mapper):
+        """Split proportions should roughly match 80/10/10."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(100, 50, 50)
+        ).astype(np.float32)
+        annotation = np.ones((100, 50, 50), dtype=np.uint32) * 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        splits = slicer.get_split_indices(split_strategy="interleaved")
+        total = (
+            len(splits["train"]) + len(splits["val"]) + len(splits["test"])
+        )
+        assert total == 100
+        assert 70 <= len(splits["train"]) <= 90
+        assert 5 <= len(splits["val"]) <= 15
+        assert 5 <= len(splits["test"]) <= 15
+
+    def test_interleaved_distributes_across_ap_range(self, mapper):
+        """Val/test indices should span the full AP range, not cluster."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(100, 50, 50)
+        ).astype(np.float32)
+        annotation = np.ones((100, 50, 50), dtype=np.uint32) * 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        splits = slicer.get_split_indices(split_strategy="interleaved")
+
+        val_indices = sorted(splits["val"])
+        test_indices = sorted(splits["test"])
+
+        # Val should have indices in both first and last quarter
+        assert any(i < 25 for i in val_indices), "No val slices in first quarter"
+        assert any(i >= 75 for i in val_indices), "No val slices in last quarter"
+
+        # Same for test
+        assert any(i < 25 for i in test_indices), "No test slices in first quarter"
+        assert any(i >= 75 for i in test_indices), "No test slices in last quarter"
+
+    def test_interleaved_val_test_are_regular(self, mapper):
+        """Val and test indices should be approximately evenly spaced."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(100, 50, 50)
+        ).astype(np.float32)
+        annotation = np.ones((100, 50, 50), dtype=np.uint32) * 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        splits = slicer.get_split_indices(split_strategy="interleaved")
+
+        val_indices = sorted(splits["val"])
+        # Check that gaps between consecutive val indices are uniform
+        gaps = [val_indices[i+1] - val_indices[i] for i in range(len(val_indices)-1)]
+        # All gaps should be the same (stride)
+        assert len(set(gaps)) == 1, f"Val indices not evenly spaced: gaps={gaps}"
+
+    def test_invalid_strategy_raises(self, mapper, synthetic_volume):
+        """Unknown split strategy should raise ValueError."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        with pytest.raises(ValueError, match="split_strategy"):
+            slicer.get_split_indices(split_strategy="unknown")
+
+    def test_spatial_strategy_unchanged(self, mapper, synthetic_volume):
+        """Explicitly passing 'spatial' should produce same result as default."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        default = slicer.get_split_indices()
+        explicit = slicer.get_split_indices(split_strategy="spatial")
+        assert default == explicit
+
+
 class TestIterSlices:
     """Test iteration over slices with remapping."""
 

@@ -233,8 +233,9 @@ class CCFv3Slicer:
         self,
         train_frac: float = 0.8,
         val_frac: float = 0.1,
+        split_strategy: str = "spatial",
     ) -> dict[str, list[int]]:
-        """Split valid AP indices spatially into train/val/test.
+        """Split valid AP indices into train/val/test.
 
         Parameters
         ----------
@@ -243,26 +244,74 @@ class CCFv3Slicer:
         val_frac : float
             Fraction of valid slices for validation (default 0.1).
             Test fraction is 1 - train_frac - val_frac.
+        split_strategy : str
+            "spatial" — contiguous blocks along AP axis (original behavior).
+            "interleaved" — every Kth slice for val/test, rest for train.
+            Interleaved ensures all brain regions are represented in every
+            split, avoiding class absence in val/test for structures that
+            are spatially concentrated (e.g., Cerebrum in anterior brain).
 
         Returns
         -------
         dict with keys "train", "val", "test", each a list of AP indices.
+
+        Raises
+        ------
+        ValueError
+            If split_strategy is not "spatial" or "interleaved".
         """
+        if split_strategy not in ("spatial", "interleaved"):
+            msg = (
+                f"split_strategy must be 'spatial' or 'interleaved', "
+                f"got '{split_strategy}'"
+            )
+            raise ValueError(msg)
+
         valid = self._get_valid_ap_indices()
         n = len(valid)
-        n_train = int(n * train_frac)
-        n_val = int(n * val_frac)
+
+        if split_strategy == "spatial":
+            n_train = int(n * train_frac)
+            n_val = int(n * val_frac)
+            return {
+                "train": valid[:n_train],
+                "val": valid[n_train : n_train + n_val],
+                "test": valid[n_train + n_val :],
+            }
+
+        # Interleaved: every stride-th slice for val, offset by 1 for test
+        stride = round(1.0 / val_frac) if val_frac > 0 else n
+        train_indices: list[int] = []
+        val_indices: list[int] = []
+        test_indices: list[int] = []
+
+        for i, ap in enumerate(valid):
+            if i % stride == 0:
+                val_indices.append(ap)
+            elif i % stride == 1:
+                test_indices.append(ap)
+            else:
+                train_indices.append(ap)
+
+        logger.info(
+            "Interleaved split (stride=%d): train=%d, val=%d, test=%d",
+            stride,
+            len(train_indices),
+            len(val_indices),
+            len(test_indices),
+        )
 
         return {
-            "train": valid[:n_train],
-            "val": valid[n_train : n_train + n_val],
-            "test": valid[n_train + n_val :],
+            "train": train_indices,
+            "val": val_indices,
+            "test": test_indices,
         }
 
     def iter_slices(
         self,
         split: str,
         mapping: dict[int, int],
+        split_strategy: str = "spatial",
     ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         """Iterate over slices in a split, with remapped class masks.
 
@@ -272,13 +321,15 @@ class CCFv3Slicer:
             One of "train", "val", "test".
         mapping : dict
             Structure ID → class ID mapping from OntologyMapper.
+        split_strategy : str
+            Split strategy passed to get_split_indices().
 
         Yields
         ------
         tuple of (image_2d, class_mask_2d)
             Image is uint8 (DV, ML), class mask is int64 (DV, ML).
         """
-        splits = self.get_split_indices()
+        splits = self.get_split_indices(split_strategy=split_strategy)
         indices = splits[split]
 
         for ap in indices:

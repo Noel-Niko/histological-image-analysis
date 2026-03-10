@@ -22,7 +22,7 @@ def mock_slicer():
         mask = rng.integers(0, 6, size=(32, 40), dtype=np.int64)
         slices.append((img, mask))
 
-    def iter_slices_fn(split, mapping):
+    def iter_slices_fn(split, mapping, split_strategy="spatial"):
         if split == "train":
             yield from slices
         elif split == "val":
@@ -49,7 +49,7 @@ def mock_slicer_large():
         mask = rng.integers(0, 6, size=(800, 1140), dtype=np.int64)
         slices.append((img, mask))
 
-    def iter_slices_fn(split, mapping):
+    def iter_slices_fn(split, mapping, split_strategy="spatial"):
         yield from slices
 
     slicer.iter_slices = iter_slices_fn

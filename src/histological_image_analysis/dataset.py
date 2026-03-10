@@ -41,6 +41,9 @@ class BrainSegmentationDataset(Dataset):
         Output spatial size (default 518 for DINOv2).
     augment : bool
         Whether to apply random augmentation (training only).
+    split_strategy : str
+        "spatial" (contiguous AP blocks) or "interleaved" (every Kth slice).
+        Use "interleaved" to ensure all brain regions appear in all splits.
     """
 
     def __init__(
@@ -50,13 +53,14 @@ class BrainSegmentationDataset(Dataset):
         mapping: dict[int, int],
         crop_size: int = 518,
         augment: bool = True,
+        split_strategy: str = "spatial",
     ) -> None:
         self._crop_size = crop_size
         self._augment = augment
 
         # Pre-load all slices into memory
         self._slices: list[tuple[np.ndarray, np.ndarray]] = list(
-            slicer.iter_slices(split, mapping)
+            slicer.iter_slices(split, mapping, split_strategy=split_strategy)
         )
         logger.info(
             "Loaded %d %s slices (crop_size=%d, augment=%s)",

@@ -301,6 +301,48 @@ class TestComputeMetrics:
         for i in range(6):
             assert f"iou_class_{i}" in result
 
+    def test_class_in_gt_but_never_predicted_returns_zero(self):
+        """If class 1 exists in GT but model never predicts it, IoU=0.0 not NaN.
+
+        This is the key diagnostic for the Cerebrum NaN issue: NaN means
+        the class is absent from ground truth, not that the model fails.
+        """
+        # GT has classes 0 and 1, predictions are all class 0
+        labels = np.array([0, 0, 1, 1, 1, 1]).reshape(1, 2, 3)
+        preds = np.array([0, 0, 0, 0, 0, 0]).reshape(1, 2, 3)
+        eval_pred = EvalPrediction(predictions=preds, label_ids=labels)
+        result = compute_metrics(eval_pred, num_labels=2)
+        # Class 1: intersection=0, union=4, IoU=0.0
+        assert result["iou_class_1"] == pytest.approx(0.0)
+        assert not np.isnan(result["iou_class_1"])
+
+    def test_absent_class_returns_nan(self):
+        """Class absent from GT produces NaN and is excluded from mean."""
+        labels = np.array([0, 0, 0, 2, 2, 2]).reshape(1, 2, 3)
+        preds = np.array([0, 0, 0, 2, 2, 2]).reshape(1, 2, 3)
+        eval_pred = EvalPrediction(predictions=preds, label_ids=labels)
+        result = compute_metrics(eval_pred, num_labels=3)
+        # Class 1 absent from GT → NaN
+        assert np.isnan(result["iou_class_1"])
+        # Mean computed from classes 0 and 2 only (both perfect)
+        assert result["mean_iou"] == pytest.approx(1.0)
+
+    def test_class_in_gt_never_predicted_lowers_mean(self):
+        """Zero IoU for unpredicted-but-present class is included in mean."""
+        # Classes 0, 1, 2 in GT; model predicts only 0 and 2
+        labels = np.array([0, 0, 1, 1, 2, 2]).reshape(1, 2, 3)
+        preds = np.array([0, 0, 0, 0, 2, 2]).reshape(1, 2, 3)
+        eval_pred = EvalPrediction(predictions=preds, label_ids=labels)
+        result = compute_metrics(eval_pred, num_labels=3)
+        # Class 0: pred={0,1,2,3}, gt={0,1} → inter=2, union=4, IoU=0.5
+        assert result["iou_class_0"] == pytest.approx(0.5)
+        # Class 1: pred={}, gt={2,3} → inter=0, union=2, IoU=0.0
+        assert result["iou_class_1"] == pytest.approx(0.0)
+        # Class 2: pred={4,5}, gt={4,5} → inter=2, union=2, IoU=1.0
+        assert result["iou_class_2"] == pytest.approx(1.0)
+        # Mean includes all 3: (0.5 + 0.0 + 1.0) / 3 = 0.5
+        assert result["mean_iou"] == pytest.approx(0.5)
+
 
 class TestPreprocessLogitsForMetrics:
     """Test logit preprocessing for eval OOM prevention."""

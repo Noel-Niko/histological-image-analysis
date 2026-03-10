@@ -1,9 +1,20 @@
 """Tests for OntologyMapper — written first per TDD."""
 
+from collections import Counter
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from histological_image_analysis.ontology import OntologyMapper
+
+REAL_ONTOLOGY_PATH = (
+    Path(__file__).parent.parent
+    / "data"
+    / "allen_brain_data"
+    / "ontology"
+    / "structure_graph_1.json"
+)
 
 
 class TestOntologyMapperInit:
@@ -218,3 +229,287 @@ class TestRemapMask:
         assert remapped[0, 2] == 2  # MB (under Brain stem) → 2
         assert remapped[0, 3] == 4  # cc (under fiber tracts) → 4
         assert remapped[0, 4] == 5  # VL (under VS) → 5
+
+
+@pytest.mark.skipif(
+    not REAL_ONTOLOGY_PATH.exists(),
+    reason="Real ontology file not present locally",
+)
+class TestRealOntologyCoarseMapping:
+    """Diagnostic tests using the full structure_graph_1.json (1,327 structures).
+
+    These tests verify the coarse mapping against the real ontology to
+    diagnose the Cerebrum NaN IoU issue from the first training run.
+    """
+
+    @pytest.fixture
+    def real_mapper(self) -> OntologyMapper:
+        return OntologyMapper(REAL_ONTOLOGY_PATH)
+
+    @pytest.fixture
+    def real_coarse_mapping(self, real_mapper) -> dict[int, int]:
+        return real_mapper.build_coarse_mapping()
+
+    def test_total_structures_count(self, real_mapper):
+        """The real ontology should have ~1,327 structures."""
+        assert len(real_mapper.all_structure_ids) > 1300
+
+    def test_coarse_mapping_covers_all_structures(
+        self, real_mapper, real_coarse_mapping
+    ):
+        """Every structure ID should have a coarse class assignment."""
+        assert set(real_coarse_mapping.keys()) == real_mapper.all_structure_ids
+
+    def test_cerebrum_class_has_structures(self, real_coarse_mapping):
+        """Class 1 (Cerebrum) should have hundreds of mapped structures."""
+        class_counts = Counter(real_coarse_mapping.values())
+        assert class_counts[1] > 600, (
+            f"Expected >600 structures mapping to Cerebrum (class 1), "
+            f"got {class_counts[1]}"
+        )
+
+    def test_all_coarse_classes_have_structures(self, real_coarse_mapping):
+        """Every coarse class 0-5 should have at least one structure."""
+        class_counts = Counter(real_coarse_mapping.values())
+        for cls in range(6):
+            assert class_counts[cls] > 0, (
+                f"Class {cls} has no structures in coarse mapping"
+            )
+
+    def test_coarse_class_distribution(self, real_coarse_mapping):
+        """Verify expected distribution: Cerebrum is the largest class."""
+        class_counts = Counter(real_coarse_mapping.values())
+        # Cerebrum should be the largest non-background class
+        non_bg = {k: v for k, v in class_counts.items() if k != 0}
+        largest_class = max(non_bg, key=non_bg.get)
+        assert largest_class == 1, (
+            f"Expected Cerebrum (1) to be largest class, "
+            f"got class {largest_class} with {non_bg[largest_class]} structures"
+        )
+
+    def test_known_cerebrum_descendants_map_to_class_1(
+        self, real_coarse_mapping
+    ):
+        """Spot-check that well-known cerebrum structures map correctly."""
+        # These are real Allen Brain structure IDs under Cerebrum
+        cerebrum_ids = {
+            567: "Cerebrum",
+            688: "Cerebral cortex",
+            695: "Cortical plate",
+            315: "Isocortex",
+            184: "Frontal pole, cerebral cortex",
+            453: "Cerebral nuclei",
+            803: "Striatum",
+        }
+        for sid, name in cerebrum_ids.items():
+            if sid in real_coarse_mapping:
+                assert real_coarse_mapping[sid] == 1, (
+                    f"{name} (ID {sid}) mapped to class "
+                    f"{real_coarse_mapping[sid]}, expected 1 (Cerebrum)"
+                )
+
+    def test_print_class_distribution(self, real_coarse_mapping, real_mapper):
+        """Print full class distribution for diagnostic review."""
+        class_counts = Counter(real_coarse_mapping.values())
+        names = real_mapper.get_class_names(real_coarse_mapping)
+        print("\n=== Real Ontology Coarse Class Distribution ===")
+        for cls in sorted(class_counts.keys()):
+            name = names[cls] if cls < len(names) else "Unknown"
+            print(f"  Class {cls} ({name}): {class_counts[cls]} structures")
+        print(f"  Total: {sum(class_counts.values())} structures")
+
+
+ANNOTATION_25_PATH = (
+    Path(__file__).parent.parent
+    / "data"
+    / "allen_brain_data"
+    / "ccfv3"
+    / "annotation_25.nrrd"
+)
+
+
+@pytest.mark.skipif(
+    not REAL_ONTOLOGY_PATH.exists() or not ANNOTATION_25_PATH.exists(),
+    reason="Real ontology or annotation_25.nrrd not present locally",
+)
+class TestRealAnnotationClassDistribution:
+    """Diagnostic: check pixel-level class distribution in real annotation volume.
+
+    Uses the 25μm annotation (85MB, faster to load) to verify that
+    Cerebrum (class 1) pixels actually exist in the remapped volume.
+    """
+
+    @pytest.fixture(scope="class")
+    def real_annotation_data(self):
+        """Load 25μm annotation + ontology, build coarse mapping."""
+        import nrrd
+
+        mapper = OntologyMapper(REAL_ONTOLOGY_PATH)
+        annotation, _ = nrrd.read(str(ANNOTATION_25_PATH))
+        coarse_mapping = mapper.build_coarse_mapping()
+        return annotation, mapper, coarse_mapping
+
+    def test_annotation_volume_has_cerebrum_structure_ids(
+        self, real_annotation_data
+    ):
+        """The raw annotation volume should contain structure IDs
+        that map to Cerebrum (class 1)."""
+        annotation, mapper, coarse_mapping = real_annotation_data
+        unique_ids = np.unique(annotation)
+        cerebrum_ids_in_volume = [
+            sid for sid in unique_ids
+            if coarse_mapping.get(int(sid), 0) == 1
+        ]
+        print(f"\nUnique structure IDs in annotation: {len(unique_ids)}")
+        print(f"Cerebrum structure IDs in annotation: {len(cerebrum_ids_in_volume)}")
+        assert len(cerebrum_ids_in_volume) > 0, (
+            "No cerebrum structure IDs found in annotation volume"
+        )
+
+    def test_remapped_volume_has_all_coarse_classes(
+        self, real_annotation_data
+    ):
+        """After remapping, all 6 coarse classes should have pixels."""
+        annotation, mapper, coarse_mapping = real_annotation_data
+        remapped = mapper.remap_mask(annotation, coarse_mapping)
+        unique_classes = set(np.unique(remapped))
+        print(f"\nUnique classes in remapped volume: {sorted(unique_classes)}")
+        for cls in range(6):
+            assert cls in unique_classes, (
+                f"Class {cls} missing from remapped volume"
+            )
+
+    def test_cerebrum_pixel_fraction(self, real_annotation_data):
+        """Cerebrum should be a significant fraction of non-background pixels."""
+        annotation, mapper, coarse_mapping = real_annotation_data
+        remapped = mapper.remap_mask(annotation, coarse_mapping)
+        total = remapped.size
+        per_class = {}
+        for cls in range(6):
+            count = int((remapped == cls).sum())
+            per_class[cls] = count
+
+        names = mapper.get_class_names(coarse_mapping)
+        print("\n=== Pixel-level Class Distribution (25μm volume) ===")
+        for cls in range(6):
+            pct = per_class[cls] / total * 100
+            print(f"  Class {cls} ({names[cls]}): {per_class[cls]:,} pixels ({pct:.1f}%)")
+        print(f"  Total: {total:,} pixels")
+
+        # Cerebrum should have > 0 pixels
+        assert per_class[1] > 0, "Cerebrum has 0 pixels in remapped volume"
+        # Cerebrum should be substantial (>5% of total volume)
+        cerebrum_pct = per_class[1] / total * 100
+        assert cerebrum_pct > 5, (
+            f"Cerebrum is only {cerebrum_pct:.1f}% of volume — unexpectedly small"
+        )
+
+    def test_cerebrum_absent_from_posterior_splits(self, real_annotation_data):
+        """DIAGNOSTIC: spatial split puts all cerebrum in train.
+
+        The mouse brain cerebrum is concentrated in the anterior portion.
+        An 80/10/10 contiguous spatial split along the AP axis puts the
+        posterior 20% into val+test, which has no cerebrum tissue.
+        THIS IS THE ROOT CAUSE of the Cerebrum NaN IoU.
+        """
+        annotation, mapper, coarse_mapping = real_annotation_data
+        n_slices = annotation.shape[0]
+
+        # Filter valid slices (>10% brain pixels, matching CCFv3Slicer logic)
+        total_pixels = annotation.shape[1] * annotation.shape[2]
+        threshold = total_pixels * 0.10
+        valid = [
+            ap for ap in range(n_slices)
+            if np.count_nonzero(annotation[ap, :, :]) >= threshold
+        ]
+
+        # Spatial split (80/10/10) on valid slices
+        n_train = int(len(valid) * 0.8)
+        n_val = int(len(valid) * 0.1)
+
+        splits = {
+            "train": valid[:n_train],
+            "val": valid[n_train:n_train + n_val],
+            "test": valid[n_train + n_val:],
+        }
+
+        print(f"\nValid slices: {len(valid)} / {n_slices}")
+        print(f"Split sizes: train={len(splits['train'])}, "
+              f"val={len(splits['val'])}, test={len(splits['test'])}")
+
+        per_split_cerebrum = {}
+        per_split_all_classes = {}
+        for split_name, indices in splits.items():
+            class_pixels = Counter()
+            for ap in indices:
+                remapped = mapper.remap_mask(
+                    annotation[ap, :, :], coarse_mapping
+                )
+                for cls in range(6):
+                    class_pixels[cls] += int((remapped == cls).sum())
+            per_split_cerebrum[split_name] = class_pixels[1]
+            per_split_all_classes[split_name] = dict(class_pixels)
+
+        names = mapper.get_class_names(coarse_mapping)
+        for split_name in ["train", "val", "test"]:
+            print(f"\n  {split_name}:")
+            for cls in range(6):
+                count = per_split_all_classes[split_name].get(cls, 0)
+                print(f"    Class {cls} ({names[cls]}): {count:,}")
+
+        # This CONFIRMS the root cause: cerebrum absent from val and test
+        assert per_split_cerebrum["train"] > 0, "Cerebrum should be in train"
+        assert per_split_cerebrum["val"] == 0, (
+            "Expected 0 cerebrum in val (posterior slices) — "
+            "this confirms the spatial split is the root cause"
+        )
+        assert per_split_cerebrum["test"] == 0, (
+            "Expected 0 cerebrum in test (most posterior slices) — "
+            "confirms spatial split root cause"
+        )
+
+    def test_interleaved_split_has_cerebrum_in_all_splits(
+        self, real_annotation_data
+    ):
+        """VALIDATION: interleaved split fixes the Cerebrum NaN issue.
+
+        With interleaved splitting, every 10th slice goes to val/test,
+        ensuring all brain regions (including anterior Cerebrum) appear
+        in all splits.
+        """
+        from histological_image_analysis.ccfv3_slicer import CCFv3Slicer
+
+        annotation, mapper, coarse_mapping = real_annotation_data
+
+        # Use a synthetic image volume (we only care about annotation)
+        image = np.ones_like(annotation, dtype=np.float32)
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+
+        splits = slicer.get_split_indices(split_strategy="interleaved")
+
+        print(f"\nInterleaved split sizes: "
+              f"train={len(splits['train'])}, "
+              f"val={len(splits['val'])}, "
+              f"test={len(splits['test'])}")
+
+        names = mapper.get_class_names(coarse_mapping)
+        for split_name in ["train", "val", "test"]:
+            class_pixels = Counter()
+            for ap in splits[split_name]:
+                remapped = mapper.remap_mask(
+                    annotation[ap, :, :], coarse_mapping
+                )
+                for cls in range(6):
+                    class_pixels[cls] += int((remapped == cls).sum())
+
+            print(f"\n  {split_name} (interleaved):")
+            for cls in range(6):
+                count = class_pixels.get(cls, 0)
+                print(f"    Class {cls} ({names[cls]}): {count:,}")
+
+            # ALL classes should be present in ALL splits
+            for cls in range(6):
+                assert class_pixels.get(cls, 0) > 0, (
+                    f"Class {cls} ({names[cls]}) missing from "
+                    f"{split_name} split with interleaved strategy"
+                )
