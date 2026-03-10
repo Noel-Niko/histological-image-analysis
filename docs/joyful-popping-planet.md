@@ -75,17 +75,28 @@ Bugs fixed during implementation:
 
 ### 4. ✅ DONE — Create `notebooks/step9_finetune_coarse.ipynb`
 
-Thin Databricks notebook — 7 cells:
+Thin Databricks notebook — 8 cells (0-7). Revised per `ml-workflow-tool/training_templates/LESSONS_LEARNED.md`:
 
 | Cell | Content |
 |------|---------|
-| 1 | Config: paths, `HF_ENDPOINT`, hyperparams (all constants here) |
-| 2 | JFrog download: `snapshot_download(repo_id="facebook/dinov2-large", endpoint=HF_ENDPOINT, token="")` |
+| 0 | `%pip install` wheel from DBFS + `dbutils.library.restartPython()` |
+| 1 | Config: MLflow experiment setup, `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING`, paths, `HYPERPARAMS` dict, JFrog Artifactory URL as default |
+| 2 | JFrog download with **retry loop** (3 attempts, exponential backoff) + `etag_timeout=86400` |
 | 3 | Pipeline: `OntologyMapper` → `CCFv3Slicer.load_volumes()` → `BrainSegmentationDataset` (train + val) |
 | 4 | Model: `create_model(num_labels=6, freeze_backbone=True, pretrained_backbone_path=model_path)` |
-| 5 | Training: `get_training_args()` → `create_trainer()` → `trainer.train()` |
-| 6 | Eval + visualization: `trainer.evaluate()`, matplotlib pred vs GT grid |
-| 7 | Save: `trainer.save_model(workspace_path)` |
+| 5 | Training: `mlflow.start_run()` + `mlflow.log_params(HYPERPARAMS)` → `trainer.train()` |
+| 6 | Eval: `trainer.evaluate()` + `mlflow.log_metrics()` for final metrics + matplotlib pred vs GT grid |
+| 7 | Save: `trainer.save_model()` + `mlflow.end_run()` to close the run |
+
+**Fixes applied from LESSONS_LEARNED.md:**
+- Retry pattern on `snapshot_download` (Artifactory drops connections)
+- `etag_timeout=86400` (avoid unnecessary HEAD requests)
+- JFrog Artifactory URL as default (not generic `huggingface.co`)
+- `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true` (GPU/CPU/memory tracking)
+- Single `mlflow.start_run()` spanning cells 5-7 (no split runs)
+- `mlflow.log_params(HYPERPARAMS)` (log all hyperparams)
+- `mlflow.end_run()` in Cell 7 (per "HF Trainer leaves active runs" lesson)
+- Removed duplicate stale config cell with wrong `1.json` path
 
 ### 5. ✅ DONE — Create `docs/references.md`
 
@@ -119,16 +130,39 @@ Mark Step 9 as in-progress, update compact context.
 | JFrog download in notebook only | Environment-specific; not reusable across environments |
 | `remove_unused_columns=False` | Critical — Trainer defaults to True and strips dict keys |
 
+## Post-Implementation: Deployment Infrastructure
+
+Added after Steps 1-6 were complete:
+
+### ✅ DONE — Bug fix: ONTOLOGY_PATH in notebook
+Changed `1.json` to `structure_graph_1.json` (matches actual uploaded filename).
+
+### ✅ DONE — Add %pip install cell to notebook
+Inserted Cell 0 with `%pip install /dbfs/FileStore/wheels/...whl` + `dbutils.library.restartPython()`.
+
+### ✅ DONE — Create `.env.example`
+Variables: `DATABRICKS_PROFILE`, `HF_ENDPOINT`, `WORKSPACE_BASE`, `DBFS_WHEEL_DIR`.
+
+### ✅ DONE — Create `Makefile`
+Targets: `install`, `test`, `lint`, `build`, `clean`, `deploy-wheel`, `deploy-notebook`, `deploy`, `validate`, `help`.
+
+### ✅ DONE — Rewrite `README.md`
+Full project docs: overview, prerequisites, local dev, Databricks deployment, staged validation, project structure, architecture diagram.
+
 ## Databricks Validation
 
-Before full training, the notebook can validate the setup incrementally:
-- Cell 2 validates JFrog connectivity (model downloads)
-- Cell 3 validates data pipeline (NRRD loads, slicing works)
-- Cell 4 validates model creation (forward pass sanity check)
-- Running just cells 1-4 confirms the environment is ready without committing to a full training run
+Staged validation via `make deploy` then running cells 0-4 on the cluster:
+- Cell 0: `%pip install` wheel from DBFS + kernel restart
+- Cell 1: Configuration paths + hyperparameters
+- Cell 2: JFrog/HuggingFace model download
+- Cell 3: Data pipeline (ontology → slicer → dataset)
+- Cell 4: Model creation + forward pass sanity check
+
+Run `make validate` for the full checklist with expected outputs.
 
 ## Verification
 
-1. `uv run pytest tests/test_training.py -v` — all ~30 new tests pass
-2. `uv run pytest tests/ -v` — full suite passes (~96 total: 66 existing + 30 new)
-3. Notebook cells 1-4 run on Databricks (validates JFrog + data + model without full training)
+1. `make test` — 102/102 tests pass (36 training + 66 existing)
+2. `make build` — wheel builds with all 5 modules
+3. `make deploy` — uploads wheel to DBFS + notebook to workspace
+4. Cells 0-4 on Databricks — staged validation (pending)
