@@ -218,13 +218,16 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
    - Real ontology smoke test: 1,327 structures, 6 coarse classes verified
    - **JFrog Artifactory reminder:** Model weights must be manually added to JFrog before Step 9 on Databricks
    - **Security:** `.claude/settings.local.json` had Databricks token — RESOLVED: `.claude/` added to `.gitignore`, history rewritten with `filter-branch`, force-pushed both branches, token rotation still recommended
-9. ~~Build fine-tuning infrastructure~~ **DONE**. See `docs/joyful-popping-planet.md` (Step 9 plan).
-   - `training.py`: 6 functions — `create_model`, `compute_metrics`, `make_compute_metrics`, `preprocess_logits_for_metrics`, `get_training_args`, `create_trainer`
-   - Key: `auxiliary_in_channels` must match backbone `hidden_size` in UperNetConfig
-   - Tests: 36 tests in `tests/test_training.py` — **102/102 full suite passes** (66 existing + 36 new)
-   - Notebook: `notebooks/step9_finetune_coarse.ipynb` — 7 cells (config, JFrog download, pipeline, model, train, eval+viz, save)
-   - References: `docs/references.md`
-   - **Pending:** Run notebook on Databricks (requires JFrog model weights + cluster access)
+9. ~~Build fine-tuning infrastructure + first training run~~ **DONE**. See `docs/joyful-popping-planet.md` (full tracker).
+   - `training.py`: 6 functions, 36 tests, **102/102 full suite passes**
+   - Deployment: `Makefile` (10 targets), `.env.example`, `README.md`, `make deploy` workflow
+   - Notebook: `notebooks/step9_finetune_coarse.ipynb` — 8 cells, patterns from `ml-workflow-tool/training_templates/LESSONS_LEARNED.md`
+   - **First run (2026-03-10):** 50 epochs, 23 min on L40S. Overall accuracy **78.8%**, mIoU **50.7%**
+   - **Critical:** Cerebrum (class 1, largest region) has **NaN IoU** — model never predicts it. Likely class imbalance.
+   - Per-class IoU: BG 53.5%, Cerebrum NaN, BS 74.1%, CB 70.1%, Fiber 41.1%, VS 14.7%
+   - Model saved: `/dbfs/FileStore/allen_brain_data/models/coarse_6class`
+   - MLflow: `/Users/noel.nosse@grainger.com/histology-brain-segmentation` (ID: 1345391216675532)
+   - **Next:** Diagnose Cerebrum NaN, add class-weighted loss, unfreeze backbone
 10. **Evaluate** — test on held-out Mouse Atlas sections, measure per-structure IoU
 
 ---
@@ -255,6 +258,10 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Deployment strategy:** src/ package installed as wheel on Databricks cluster. Training notebook (Step 9) imports from installed package — thin notebook for orchestration + visualization only. No UDF/Spark concern (single-node PyTorch).
 
-**Step 9 (training infrastructure):** DONE. `training.py` with 6 functions: `create_model` (DINOv2 backbone + UperNet head, freeze support, `auxiliary_in_channels` must match backbone hidden_size), `compute_metrics` (manual mIoU, no extra deps), `make_compute_metrics` (closure factory for Trainer), `preprocess_logits_for_metrics` (argmax to prevent eval OOM), `get_training_args` (critical: `remove_unused_columns=False`), `create_trainer` (wires everything). 36 tests, 102/102 full suite. Notebook: `notebooks/step9_finetune_coarse.ipynb` (7 cells — thin Databricks orchestration). References: `docs/references.md`. Pending: run on Databricks.
+**Step 9 (training + first run):** DONE. `training.py` with 6 functions: `create_model` (DINOv2 backbone + UperNet head, freeze support, `auxiliary_in_channels` must match backbone `hidden_size`), `compute_metrics` (manual mIoU), `make_compute_metrics` (closure factory), `preprocess_logits_for_metrics` (argmax to prevent eval OOM), `get_training_args` (critical: `remove_unused_columns=False`), `create_trainer`. 36 tests, 102/102 full suite. Notebook: `notebooks/step9_finetune_coarse.ipynb` (8 cells). Deployment: `Makefile` (10 targets), `.env.example`, `README.md`. `make deploy` builds wheel + uploads to DBFS + uploads notebook. Patterns from `ml-workflow-tool/training_templates/LESSONS_LEARNED.md`: retry on `snapshot_download`, `etag_timeout=86400`, JFrog Artifactory URL default, `MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING`, single `mlflow.start_run()`/`end_run()` across cells, `mlflow.log_params(HYPERPARAMS)`.
 
-**Repo files:** `docs/progress.md` (this file), `docs/joyful-popping-planet.md` (Step 9 plan — active tracker), `docs/step8_implementation_plan.md` (DONE), `docs/step8_training_data_pipeline.md` (original plan), `docs/step7_dataset_model_decision.md` (DONE), `docs/step5_6_completion_report.md` (download results), `docs/data_download_plan.md`, `docs/databricks_connectivity.md`, `docs/references.md`, `exploration/allen_brain_data_explorer.ipynb`, `exploration/databricks_connectivity_check.ipynb`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py` + `tests/conftest.py` + `tests/fixtures/`. Notebook: `notebooks/step9_finetune_coarse.ipynb`.
+**Step 9 first training run (2026-03-10):** Coarse 6-class, frozen DINOv2-Large backbone, UperNet head-only, 50 epochs, batch_size=8, lr=1e-4, fp16. Runtime: 23 min on L40S 48GB. **Overall accuracy 78.8%, mIoU 50.7%.** Per-class IoU: BG 53.5%, Cerebrum **NaN** (critical), BS 74.1%, CB 70.1%, Fiber 41.1%, VS 14.7%. Model saved: `/dbfs/FileStore/allen_brain_data/models/coarse_6class`. MLflow experiment: `/Users/noel.nosse@grainger.com/histology-brain-segmentation` (ID: 1345391216675532). **Critical issue:** Cerebrum (class 1, 637/1327 structures, largest region) has NaN IoU — model never predicts it, likely class imbalance. Next: diagnose class distribution, add class-weighted loss, unfreeze backbone.
+
+**Databricks deployment lessons:** (1) Workspace has 500 MB per-file limit — checkpoints to `/tmp/`, final model to `/dbfs/`. (2) `databricks workspace import` v0.278+ uses `--file` flag, not positional arg; parent dirs must exist. (3) Route all downloads through JFrog Artifactory `https://graingerreadonly.jfrog.io/artifactory/api/huggingfaceml/huggingfaceml-remote`. (4) HF Trainer `report_to="mlflow"` can leave runs open — always call `mlflow.end_run()`. (5) `find_unused_parameters=True` DDP warning is harmless on single GPU.
+
+**Repo files:** `docs/progress.md` (this file), `docs/joyful-popping-planet.md` (Step 9 full tracker — active), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py` + `conftest.py` + `fixtures/`. Notebook: `notebooks/step9_finetune_coarse.ipynb`. Infra: `Makefile`, `.env.example`, `README.md`.

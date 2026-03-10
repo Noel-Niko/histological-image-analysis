@@ -149,20 +149,104 @@ Targets: `install`, `test`, `lint`, `build`, `clean`, `deploy-wheel`, `deploy-no
 ### ✅ DONE — Rewrite `README.md`
 Full project docs: overview, prerequisites, local dev, Databricks deployment, staged validation, project structure, architecture diagram.
 
-## Databricks Validation
+## Databricks Deployment & Validation
 
-Staged validation via `make deploy` then running cells 0-4 on the cluster:
-- Cell 0: `%pip install` wheel from DBFS + kernel restart
-- Cell 1: Configuration paths + hyperparameters
-- Cell 2: JFrog/HuggingFace model download
-- Cell 3: Data pipeline (ontology → slicer → dataset)
-- Cell 4: Model creation + forward pass sanity check
+### Staged Validation — ✅ PASSED (2026-03-10)
 
-Run `make validate` for the full checklist with expected outputs.
+All cells 0-4 passed on cluster `0306-215929-ai2l0t8w` (g6e.16xlarge, L40S 48GB):
+- Cell 0: `%pip install` — wheel installed, kernel restarted
+- Cell 1: Config — all paths correct, MLflow experiment created (ID: 1345391216675532)
+- Cell 2: JFrog download — DINOv2-Large downloaded via Artifactory, cached at `/tmp/dinov2-large/`
+- Cell 3: Data pipeline — 6 coarse classes, 1320 slices, train=1016 / val=127 / test=127, sample shape `(3,518,518)`
+- Cell 4: Forward pass — logits `(1,6,518,518)`, "Forward pass OK"
+
+### Deployment Issues Encountered & Fixed
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| `databricks workspace import` error: "accepts 1 arg" | CLI v0.278 uses `--file` flag, not positional arg | `--file $(NOTEBOOK_SRC)` |
+| "parent folder does not exist" | `/histology/notebooks/` dir didn't exist on workspace | Added `databricks workspace mkdirs` before import |
+| `SafetensorError: File too large (os error 27)` | Workspace 500 MB per-file limit; DINOv2+UperNet ~1.2 GB | `OUTPUT_DIR=/tmp/...`, `FINAL_MODEL_DIR=/dbfs/...` |
+| `skip logging GPU metrics` | `pynvml` not accessible for MLflow system metrics | Informational only, harmless |
+| `find_unused_parameters=True` DDP warning | Trainer wraps model in DDP even on single GPU | Harmless warning, standard behavior |
+
+---
+
+## First Training Run — Results (2026-03-10)
+
+**Config:** Coarse 6-class, frozen DINOv2-Large backbone, UperNet head-only, 50 epochs, batch_size=8, lr=1e-4, fp16=True
+
+**Training:**
+- 6,350 global steps, training loss: 0.217
+- Runtime: ~23 minutes on L40S 48GB
+- Throughput: 36.3 samples/sec, 4.5 steps/sec
+
+**Evaluation:**
+
+| Metric | Value |
+|--------|-------|
+| Overall accuracy | 78.8% |
+| Mean IoU | 50.7% |
+| Eval loss | 1.238 |
+
+| Class | Name | IoU |
+|-------|------|-----|
+| 0 | Background | 53.5% |
+| 1 | **Cerebrum** | **NaN** |
+| 2 | Brain stem | 74.1% |
+| 3 | Cerebellum | 70.1% |
+| 4 | Fiber tracts | 41.1% |
+| 5 | Ventricular systems | 14.7% |
+
+**Model saved to:** `/dbfs/FileStore/allen_brain_data/models/coarse_6class`
+**MLflow experiment:** `/Users/noel.nosse@grainger.com/histology-brain-segmentation`
+
+### Critical Issue: Cerebrum (class 1) IoU is NaN
+
+Cerebrum is the **largest brain region** — 637 of 1,327 structures map to it in the coarse mapping. NaN IoU means the model either never predicts class 1, or never correctly predicts it. Since Cerebrum dominates the volume, the most likely cause is that the model labels all cerebrum pixels as Background (class 0). This is a class imbalance / representation problem — the frozen backbone features may not discriminate cerebrum from background well enough with head-only training.
+
+Other weak classes: Ventricular systems (14.7%) and fiber tracts (41.1%) — both are small structures that are hard to segment at coarse level.
+
+---
+
+## Lessons Learned (Databricks-specific)
+
+See also `ml-workflow-tool/training_templates/LESSONS_LEARNED.md` for general patterns.
+
+1. **Workspace has 500 MB per-file limit** — checkpoints and model saves MUST use `/tmp/` (local, ephemeral) or `/dbfs/` (persistent, no limit). Workspace paths fail with `SafetensorError: File too large`.
+2. **`databricks workspace import` CLI syntax** — v0.278+ uses `TARGET_PATH --file LOCAL_PATH` (not two positional args). Parent dirs must exist — use `databricks workspace mkdirs` first.
+3. **JFrog Artifactory** — route all model downloads through `https://graingerreadonly.jfrog.io/...`. Always use retry loop + `etag_timeout=86400`.
+4. **MLflow single run** — use `mlflow.start_run()` before training, `mlflow.end_run()` after save. HF Trainer's `MLflowCallback` can leave runs open.
+5. **GPU metrics** — `pynvml` may not be accessible; "skip logging GPU metrics" is informational only.
+6. **DDP warning** — `find_unused_parameters=True` is standard HF Trainer behavior on single GPU, harmless.
+
+---
+
+## Next Steps
+
+### Immediate: Diagnose Cerebrum NaN
+1. **Check class distribution** — count pixels per class in train and val sets. Is Cerebrum present? What fraction?
+2. **Check predictions** — run inference on a few val samples and check if model ever predicts class 1
+3. **Check `compute_metrics`** — verify NaN handling. Does the IoU computation produce NaN when there are no true positive predictions for a class that exists in ground truth?
+
+### Phase 2: Improve Coarse Model
+4. **Class-weighted loss** — add inverse-frequency or effective-number weighting to CrossEntropyLoss to boost underrepresented classes
+5. **Unfreeze backbone** — head-only training with frozen DINOv2 features may be insufficient. Unfreeze with lower LR (e.g., backbone 1e-5, head 1e-4)
+6. **Evaluate on test split** — 127 held-out slices, not yet evaluated
+
+### Phase 3: Fine Granularity
+7. **Increase to depth-2 mapping** (~20-50 classes) — test the pipeline's scaling
+8. **Full mapping** (~1,327 classes) — the final target per Step 7 plan
+9. **Autofluorescence domain** — train on 25μm template volume (the ultimate target domain)
+
+### Phase 4: Evaluation
+10. **Mouse Atlas 2D validation** — evaluate on held-out 2D atlas sections with SVG annotations
+11. **Per-structure IoU analysis** — identify which structures are well/poorly segmented
 
 ## Verification
 
 1. `make test` — 102/102 tests pass (36 training + 66 existing)
 2. `make build` — wheel builds with all 5 modules
 3. `make deploy` — uploads wheel to DBFS + notebook to workspace
-4. Cells 0-4 on Databricks — staged validation (pending)
+4. Staged validation cells 0-4 — ✅ PASSED
+5. Full training run (50 epochs) — ✅ COMPLETED, results above
