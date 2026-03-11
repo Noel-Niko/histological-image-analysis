@@ -187,7 +187,36 @@ deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full
 
 ---
 
-## Implementation Order
+## Implementation Status
+
+| Step | Task | Status |
+|------|------|--------|
+| 0 | Update CLAUDE.md with plan-file-location rule | DONE |
+| 1 | Write tests for `get_class_names()` fix (5 tests) | DONE — 3 failed as expected (TDD red) |
+| 2 | Fix `get_class_names()` in ontology.py | DONE — all 5 tests pass (TDD green) |
+| 3 | Write depth-2 integration tests (4 tests) | DONE — all 4 pass |
+| 4 | Create `step10_finetune_depth2.ipynb` notebook | DONE — 8 cells |
+| 5 | Create `step10_finetune_full.ipynb` notebook | DONE — 8 cells, batch_size=4 |
+| 6 | Update Makefile (deploy targets, help regex) | DONE — 12 targets |
+| 7 | Update README.md | DONE — current with all 3 notebooks |
+| 8 | `make test` passes | DONE — **133/133 tests pass** |
+| 9 | `make deploy` + train depth-2 on multi-GPU | **PENDING — user deploying now** |
+| 10 | Review depth-2 results, update docs | PENDING |
+| 11 | `make deploy` + train full mapping on multi-GPU | PENDING |
+| 12 | Review full results, update docs | PENDING |
+
+### What's left for the next LLM session
+
+All local code changes are complete. The remaining work is Databricks deployment and training:
+
+1. **Deploy:** `make deploy` — builds wheel, uploads to DBFS, uploads all 3 notebooks
+2. **Train depth-2:** Open `step10_depth2` notebook on multi-GPU cluster (g6e.48xlarge, 8x L40S), run cells 0-7
+3. **Train full:** Open `step10_full` notebook on multi-GPU cluster, run cells 0-7
+4. **Update docs:** Record results in `docs/progress.md` and this plan file
+5. **If depth-2 or full OOM:** Reduce `per_device_train_batch_size` (depth-2: try 4; full: try 2)
+6. **If mIoU is low:** Consider unfreezing backbone with lower LR (1e-5 backbone, 1e-4 head)
+
+### Implementation Order (original plan, for reference)
 
 1. Write tests for `get_class_names()` fix → run, see failures
 2. Fix `get_class_names()` in ontology.py → tests pass

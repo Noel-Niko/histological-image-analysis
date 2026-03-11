@@ -228,8 +228,16 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
    - **Run 2 (interleaved split, 2026-03-10):** Overall accuracy **95.8%**, mIoU **88.0%**
      - Per-class IoU: BG 92.1%, Cerebrum **95.8%**, BS 94.3%, CB 92.9%, Fiber 73.0%, VS 80.1%
      - Eval loss: 0.175 (was 1.238). Training loss similar (0.240 vs 0.217) — model quality was fine, eval was broken
-   - **Next:** Evaluate on test split, then decide: push coarse higher or move to fine granularity
-10. **Evaluate** — test on held-out Mouse Atlas sections, measure per-structure IoU
+   - **Next:** Scale to finer granularity (Step 10)
+10. ~~Move to fine granularity~~ **IN PROGRESS**. See `docs/step10_plan.md`.
+    - **Decision:** Scale to depth-2 (19 classes), then full mapping (1,328 classes). Coarse model is strong (88% mIoU), diminishing returns to push higher.
+    - **Bug fix:** `get_class_names()` in `ontology.py` picked arbitrary structure per class for non-coarse mappings. Fixed: prefer shallowest-depth structure. 9 new tests added (133 total).
+    - **Notebooks created:** `step10_finetune_depth2.ipynb` (19 classes), `step10_finetune_full.ipynb` (1,328 classes, batch_size=4)
+    - **Makefile:** Added `deploy-notebook-depth2`, `deploy-notebook-full`. `make deploy` now deploys all 3 notebooks.
+    - **Multi-GPU strategy:** DDP (not FSDP). Model is 350M params (700 MB fp16) — fits on single GPU. DDP is automatic with HF Trainer on multi-GPU cluster. 8x L40S → ~6-7x speedup.
+    - **Memory:** Full mapping at batch=4: ~5.7 GB per GPU (12% of L40S 48 GB). No OOM risk.
+    - **Status:** All local code complete. Deployment + training pending.
+11. **Evaluate** — test on held-out Mouse Atlas sections, measure per-structure IoU
 
 ---
 
@@ -269,4 +277,6 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Databricks deployment lessons:** (1) Workspace has 500 MB per-file limit — checkpoints to `/tmp/`, final model to `/dbfs/`. (2) `databricks workspace import` v0.278+ uses `--file` flag, not positional arg; parent dirs must exist. (3) Route all downloads through JFrog Artifactory `https://graingerreadonly.jfrog.io/artifactory/api/huggingfaceml/huggingfaceml-remote`. (4) HF Trainer `report_to="mlflow"` can leave runs open — always call `mlflow.end_run()`. (5) `find_unused_parameters=True` DDP warning is harmless on single GPU.
 
-**Repo files:** `docs/progress.md` (this file), `docs/joyful-popping-planet.md` (Step 9 full tracker — active), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py` + `conftest.py` + `fixtures/`. Notebook: `notebooks/step9_finetune_coarse.ipynb`. Infra: `Makefile`, `.env.example`, `README.md`.
+**Step 10 (fine granularity):** IN PROGRESS. Local code complete, deployment pending. Bug fix: `get_class_names()` in `ontology.py` now prefers shallowest-depth structure per class (was arbitrary). 9 new tests (133 total). Notebooks: `step10_finetune_depth2.ipynb` (19 classes, `build_depth_mapping(target_depth=2)`), `step10_finetune_full.ipynb` (1,328 classes, `build_full_mapping()`, batch_size=4). Multi-GPU: DDP on 8x L40S (g6e.48xlarge), HF Trainer auto-detects. Model: 350M params, 700 MB fp16. Full mapping memory: ~5.7 GB/GPU (12% of 48 GB). Makefile: 12 targets incl. `deploy-notebook-depth2`, `deploy-notebook-full`. `make deploy` deploys all 3 notebooks. Plan: `docs/step10_plan.md`.
+
+**Repo files:** `docs/progress.md` (this file), `docs/step10_plan.md` (Step 10 plan — active), `docs/joyful-popping-planet.md` (Step 9 tracker — complete), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py` + `conftest.py` + `fixtures/`. Notebooks: `notebooks/step9_finetune_coarse.ipynb`, `notebooks/step10_finetune_depth2.ipynb`, `notebooks/step10_finetune_full.ipynb`. Infra: `Makefile` (12 targets), `.env.example`, `README.md`.
