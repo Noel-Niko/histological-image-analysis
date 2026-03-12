@@ -195,50 +195,82 @@ deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full
 | 1 | Write tests for `get_class_names()` fix (5 tests) | DONE — 3 failed as expected (TDD red) |
 | 2 | Fix `get_class_names()` in ontology.py | DONE — all 5 tests pass (TDD green) |
 | 3 | Write depth-2 integration tests (4 tests) | DONE — all 4 pass |
-| 4 | Create `step10_finetune_depth2.ipynb` notebook | DONE — 8 cells |
-| 5 | Create `step10_finetune_full.ipynb` notebook | DONE — 8 cells, batch_size=4 |
+| 4 | Create depth-2 notebook | DONE — 8 cells (renamed to `finetune_depth2.ipynb`) |
+| 5 | Create full-mapping notebook | DONE — 8 cells, batch_size=4 (renamed to `finetune_full.ipynb`) |
 | 6 | Update Makefile (deploy targets, help regex) | DONE — 12 targets |
 | 7 | Update README.md | DONE — current with all 3 notebooks |
 | 8 | `make test` passes | DONE — **133/133 tests pass** |
-| 9 | `make deploy` + train depth-2 on multi-GPU | **PENDING — user deploying now** |
-| 10 | Review depth-2 results, update docs | PENDING |
-| 11 | `make deploy` + train full mapping on multi-GPU | PENDING |
-| 12 | Review full results, update docs | PENDING |
+| 9 | Deploy + train depth-2 | DONE — **69.6% mIoU**, 95.5% accuracy, 25 min on 1x L40S |
+| 10 | Review depth-2 results, update docs | DONE |
+| 11 | Deploy + train full mapping | DONE — **60.3% mIoU**, 88.9% accuracy, 5.5 hrs on 1x L40S |
+| 12 | Review full results, update docs | DONE |
+| 13 | Rename notebooks (remove step prefixes) | DONE — `finetune_coarse`, `finetune_depth2`, `finetune_full` |
+| 14 | DINOv2 model research | DONE — see `docs/dinov2_model_research.md` |
 
-### What's left for the next LLM session
+## Training Results
 
-All local code changes are complete. The remaining work is Databricks deployment and training:
+### Depth-2 (19 classes) — Run 3
 
-1. **Deploy:** `make deploy` — builds wheel, uploads to DBFS, uploads all 3 notebooks
-2. **Train depth-2:** Open `step10_depth2` notebook on multi-GPU cluster (g6e.48xlarge, 8x L40S), run cells 0-7
-3. **Train full:** Open `step10_full` notebook on multi-GPU cluster, run cells 0-7
-4. **Update docs:** Record results in `docs/progress.md` and this plan file
-5. **If depth-2 or full OOM:** Reduce `per_device_train_batch_size` (depth-2: try 4; full: try 2)
-6. **If mIoU is low:** Consider unfreezing backbone with lower LR (1e-5 backbone, 1e-4 head)
+- **mIoU: 69.6%**, Overall accuracy: 95.5%
+- Training loss: 0.305, Eval loss: 0.194
+- Runtime: 25 min (1x L40S, batch=8)
+- 15 of 19 classes with valid IoU (4 absent from val: interventricular foramen, Interpeduncular fossa, grooves of cerebral/cerebellar cortex)
+- Top: Cerebrum 95.8%, Brain stem 94.5%, Cerebellum 93.0%, Background 91.2%
+- Lowest valid: extrapyramidal fiber systems 44.4%, central canal 0.0% (only 44 val pixels)
 
-### Implementation Order (original plan, for reference)
+### Full Mapping (1,328 classes) — Run 4
 
-1. Write tests for `get_class_names()` fix → run, see failures
-2. Fix `get_class_names()` in ontology.py → tests pass
-3. Write depth-2 integration tests → verify
-4. Create `step10_finetune_depth2.ipynb` notebook
-5. Update Makefile
-6. Deploy + train depth-2 on multi-GPU (8x L40S)
-7. Review results, update docs
-8. Create `step10_finetune_full.ipynb` notebook
-9. Deploy + train full mapping on multi-GPU (8x L40S)
-10. Review results, update docs
+- **mIoU: 60.3%**, Overall accuracy: 88.9%
+- Training loss: 0.994, Eval loss: 0.496
+- Runtime: 5.5 hrs (1x L40S, batch=4)
+- 503 of 1,328 classes with valid IoU (825 absent from val set)
+- Top: Caudoputamen 95.2%, Background 94.3%, Main olfactory bulb 93.8%, Nodulus 92.9%
+- Bottom: many tiny structures at 0.0% (Accessory supraoptic group, Frontal pole layer 6b, etc.)
+- Multi-GPU OOM'd due to per-GPU DDP overhead — see `docs/step10_gpu_memory_review.md`
 
----
+### GPU Memory Lessons
+
+Three attempts at full mapping training on different clusters:
+1. **Single GPU (batch=4)** — succeeded with ~20 GB headroom
+2. **Multi-GPU DDP (batch=4)** — OOM from DDP/Spark process overhead on GPU 0
+3. **Single GPU (batch=2 + grad ckpt)** — ValueError (UperNet doesn't support gradient checkpointing)
+
+Key takeaways documented in `docs/step10_gpu_memory_review.md`:
+- Single GPU is sufficient for this workload
+- Multi-GPU DDP requires reduced batch size (batch=2 + grad_accum=2)
+- `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` reduces fragmentation
+- Always `torch.cuda.empty_cache()` after sanity-check forward passes
+
+## Next Steps (for future sessions)
+
+Step 10 training is complete. Recommended next steps (see `docs/dinov2_model_research.md`):
+
+1. **Unfreeze backbone with differential LR** (highest expected impact)
+   - Backbone LR: 1e-5, Head LR: 1e-4
+   - Already possible via `get_training_args(**kwargs)` — no code changes
+   - Risk: overfitting on 1,016 samples. Mitigate with early stopping
+
+2. **Class-weighted cross-entropy loss** (medium impact)
+   - Weight rare classes inversely proportional to pixel frequency
+   - Addresses 825 classes absent from val and many at 0.0% IoU
+
+3. **More epochs for full mapping** (low cost)
+   - 50 epochs may not converge for 1,328-class head
+   - Try 100-200 with early stopping
+
+4. **Larger backbone (DINOv2-Giant)** — try AFTER unfreezing backbone
+   - 1.1B params, fits on L40S 48 GB (~22-28 GB)
+   - Requires new file (`model_config.py`) — `out_features` hardcoded for Large
+   - See `docs/dinov2_model_research.md` for full analysis
 
 ## Verification
 
 1. `make test` — all existing 124 tests + 9 new tests = **133 tests pass**
 2. `get_class_names(build_depth_mapping(2))` returns "Cerebrum" (not descendant name)
-3. Depth-2 notebook: staged validation cells 0-4 pass, training completes in ~4-5 min, mIoU > 50%
-4. Full mapping notebook: runs without OOM at batch=4, training completes in ~5-10 min
-5. Models saved to `/dbfs/FileStore/allen_brain_data/models/{depth2,full}`
-6. MLflow experiments logged with correct metrics
+3. Depth-2: mIoU 69.6%, 15/19 classes valid — VERIFIED
+4. Full mapping: mIoU 60.3%, 503/1,328 classes valid, no OOM on single GPU — VERIFIED
+5. Models saved to `/dbfs/FileStore/allen_brain_data/models/{depth2,full}` — VERIFIED
+6. MLflow experiments logged with correct metrics — VERIFIED
 
 ---
 

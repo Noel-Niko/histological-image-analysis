@@ -229,15 +229,27 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
      - Per-class IoU: BG 92.1%, Cerebrum **95.8%**, BS 94.3%, CB 92.9%, Fiber 73.0%, VS 80.1%
      - Eval loss: 0.175 (was 1.238). Training loss similar (0.240 vs 0.217) — model quality was fine, eval was broken
    - **Next:** Scale to finer granularity (Step 10)
-10. ~~Move to fine granularity~~ **IN PROGRESS**. See `docs/step10_plan.md`.
-    - **Decision:** Scale to depth-2 (19 classes), then full mapping (1,328 classes). Coarse model is strong (88% mIoU), diminishing returns to push higher.
-    - **Bug fix:** `get_class_names()` in `ontology.py` picked arbitrary structure per class for non-coarse mappings. Fixed: prefer shallowest-depth structure. 9 new tests added (133 total).
-    - **Notebooks created:** `step10_finetune_depth2.ipynb` (19 classes), `step10_finetune_full.ipynb` (1,328 classes, batch_size=4)
-    - **Makefile:** Added `deploy-notebook-depth2`, `deploy-notebook-full`. `make deploy` now deploys all 3 notebooks.
-    - **Multi-GPU strategy:** DDP (not FSDP). Model is 350M params (700 MB fp16) — fits on single GPU. DDP is automatic with HF Trainer on multi-GPU cluster. 8x L40S → ~6-7x speedup.
-    - **Memory:** Full mapping at batch=4: ~5.7 GB per GPU (12% of L40S 48 GB). No OOM risk.
-    - **Status:** All local code complete. Deployment + training pending.
-11. **Evaluate** — test on held-out Mouse Atlas sections, measure per-structure IoU
+10. ~~Move to fine granularity~~ **DONE**. See `docs/step10_plan.md`.
+    - **Bug fix:** `get_class_names()` in `ontology.py` picked arbitrary structure per class for non-coarse mappings. Fixed: prefer shallowest-depth structure. 9 new tests (133 total).
+    - **Notebooks:** `finetune_depth2.ipynb` (19 classes), `finetune_full.ipynb` (1,328 classes, batch_size=4). Renamed from step9/step10 prefixes.
+    - **Run 3 (depth-2, 2026-03-10):** mIoU **69.6%**, accuracy 95.5%, 25 min on 1x L40S. Top: Cerebrum 95.8%, Brain stem 94.5%, Cerebellum 93.0%. 15/19 classes valid (4 absent from val).
+    - **Run 4 (full, 2026-03-11):** mIoU **60.3%**, accuracy 88.9%, 5.5 hrs on 1x L40S. Top: Caudoputamen 95.2%, Background 94.3%, Main olfactory bulb 93.8%. 503/1,328 classes valid (825 absent from val).
+    - **GPU memory lessons:** Multi-GPU DDP OOM'd at batch=4 (DDP overhead consumed headroom). Single GPU succeeded. UperNet doesn't support gradient checkpointing. See `docs/step10_gpu_memory_review.md`.
+    - **DINOv2 research:** Giant (1.1B params) fits on L40S but unlikely to be highest-impact next step. Recommend unfreezing backbone first. See `docs/dinov2_model_research.md`.
+11. ~~Step 11a — Unfreeze backbone~~ **DONE**. See `docs/step11_plan.md`.
+    - **Run 5 (unfrozen, 2026-03-12):** mIoU **68.8%**, training loss 0.730, 11.3 hrs on 1x L40S.
+    - **+8.5% mIoU gain** over frozen baseline (60.3%) — within expected 5-15% range.
+    - Strategy: Last 4 DINOv2 blocks (20-23) unfrozen, differential LR (backbone 1e-5, head 1e-4), 100 epochs.
+    - 3 deployment failures resolved: OOM at batch=4, BatchNorm ValueError at batch=1, DDP gradient checkpointing bug (`use_reentrant=False` required). Final: batch=2, grad_accum=2.
+    - MLflow artifact gap fixed: all 4 notebooks now call `mlflow.log_artifacts()` before `mlflow.end_run()`.
+    - LESSONS_LEARNED.md updated: gradient checkpointing + frozen boundary, PSP BatchNorm minimum batch, DDP on single-GPU Databricks, MLflow artifact logging.
+12. **Step 11b — Class-weighted Dice + CE loss** — NEXT. See `docs/finetuning_recommendations.md`.
+13. **Future steps** — after Step 11b:
+    - Step 11b: Class-weighted Dice + CE loss (new `losses.py` + custom Trainer)
+    - Step 11c: Extended augmentation (elastic deformation, blur, 90° rotations)
+    - Step 11d: Hierarchical loss (coarse + depth-2 + full heads)
+    - Step 12: Cross-stain/species generalization (Phase 2 of finetuning_recommendations.md)
+    - DINOv2-Giant: only after above exhausted (see `docs/dinov2_model_research.md`)
 
 ---
 
@@ -277,6 +289,12 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Databricks deployment lessons:** (1) Workspace has 500 MB per-file limit — checkpoints to `/tmp/`, final model to `/dbfs/`. (2) `databricks workspace import` v0.278+ uses `--file` flag, not positional arg; parent dirs must exist. (3) Route all downloads through JFrog Artifactory `https://graingerreadonly.jfrog.io/artifactory/api/huggingfaceml/huggingfaceml-remote`. (4) HF Trainer `report_to="mlflow"` can leave runs open — always call `mlflow.end_run()`. (5) `find_unused_parameters=True` DDP warning is harmless on single GPU.
 
-**Step 10 (fine granularity):** IN PROGRESS. Local code complete, deployment pending. Bug fix: `get_class_names()` in `ontology.py` now prefers shallowest-depth structure per class (was arbitrary). 9 new tests (133 total). Notebooks: `step10_finetune_depth2.ipynb` (19 classes, `build_depth_mapping(target_depth=2)`), `step10_finetune_full.ipynb` (1,328 classes, `build_full_mapping()`, batch_size=4). Multi-GPU: DDP on 8x L40S (g6e.48xlarge), HF Trainer auto-detects. Model: 350M params, 700 MB fp16. Full mapping memory: ~5.7 GB/GPU (12% of 48 GB). Makefile: 12 targets incl. `deploy-notebook-depth2`, `deploy-notebook-full`. `make deploy` deploys all 3 notebooks. Plan: `docs/step10_plan.md`.
+**Step 10 (fine granularity):** DONE. Bug fix: `get_class_names()` prefers shallowest-depth structure per class. 9 new tests (133 total). Notebooks renamed: `finetune_coarse.ipynb`, `finetune_depth2.ipynb`, `finetune_full.ipynb`. **Run 3 (depth-2):** mIoU 69.6%, accuracy 95.5%, 25 min 1x L40S. **Run 4 (full):** mIoU 60.3%, accuracy 88.9%, 5.5 hrs 1x L40S. 503/1,328 classes valid. Multi-GPU DDP OOM'd at batch=4 (per-GPU DDP overhead). UperNet doesn't support gradient checkpointing. See `docs/step10_gpu_memory_review.md`. DINOv2-Giant researched: fits on L40S but recommend unfreezing backbone first. See `docs/dinov2_model_research.md`. Plan: `docs/step10_plan.md`.
 
-**Repo files:** `docs/progress.md` (this file), `docs/step10_plan.md` (Step 10 plan — active), `docs/joyful-popping-planet.md` (Step 9 tracker — complete), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py` + `conftest.py` + `fixtures/`. Notebooks: `notebooks/step9_finetune_coarse.ipynb`, `notebooks/step10_finetune_depth2.ipynb`, `notebooks/step10_finetune_full.ipynb`. Infra: `Makefile` (12 targets), `.env.example`, `README.md`.
+**Step 11a (backbone unfreezing):** DONE. Run 5: mIoU **68.8%** (+8.5% over frozen 60.3%), 11.3 hrs on 1x L40S, 100 epochs. Last 4 DINOv2 blocks (20-23) unfrozen, differential LR (backbone 1e-5, head 1e-4). 3 deployment failures resolved: (1) OOM at batch=4, (2) UperNet PSP BatchNorm ValueError at batch=1 (minimum batch=2), (3) gradient checkpointing `use_reentrant=True` broke gradient flow at frozen/unfrozen boundary (fix: `use_reentrant=False`). Final config: batch=2, grad_accum=2, `ddp_find_unused_parameters=True`. MLflow artifact gap fixed in all 4 notebooks (`mlflow.log_artifacts()` before `mlflow.end_run()`). LESSONS_LEARNED.md updated with 4 new sections. Plan: `docs/step11_plan.md`. Full roadmap: `docs/finetuning_recommendations.md` (15 recommendations in 4 phases).
+
+**Step 11a-i (local inference tooling):** DONE. Model logged to MLflow (run ID `6cc49e1ccb0d4b30b371e9a071dcbe6f`). Created local inference infrastructure for PhD users: (1) `docs/model_download_guide.md` — comprehensive guide with 3 download methods (DBFS, MLflow, direct load), verification, troubleshooting. (2) `scripts/run_inference.py` — CLI tool for batch inference on histological images. (3) `verify_model.py` — quick verification script. (4) Models excluded from git via `.gitignore` (~1.2 GB each). (5) README updated with "Using Trained Models" section. Download: `databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/unfrozen ./models/dinov2-upernet-unfrozen`. Inference example processes user-provided brain tissue images and outputs predicted segmentation masks with structure IDs. Script supports batch processing, GPU acceleration, and visualization. **Ready for PhD researcher testing.**
+
+**Next: Step 11b — class-weighted Dice + CE loss.**
+
+**Repo files:** `docs/progress.md` (this file), `docs/model_download_guide.md` (local inference guide — NEW), `docs/step11_plan.md` (Step 11 plan — in progress), `docs/step10_plan.md` (Step 10 plan — complete), `docs/finetuning_recommendations.md` (comprehensive roadmap), `docs/dinov2_model_research.md` (backbone research), `docs/step10_gpu_memory_review.md` (GPU memory lessons), `docs/joyful-popping-planet.md` (Step 9 tracker — complete), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training}.py` + `conftest.py` + `fixtures/`. Notebooks: `notebooks/finetune_coarse.ipynb`, `notebooks/finetune_depth2.ipynb`, `notebooks/finetune_full.ipynb`, `notebooks/finetune_unfrozen.ipynb`. Scripts: `scripts/download_allen_data.py`, `scripts/run_inference.py` (NEW). Verification: `verify_model.py` (NEW). Infra: `Makefile` (14 targets), `.env.example`, `README.md`.

@@ -17,8 +17,8 @@ Fine-tune DINOv2-Large + UperNet for semantic segmentation of brain structures i
 
 | Cluster | Instance | GPU | Use Case |
 |---------|----------|-----|----------|
-| Single GPU | g6e.16xlarge | 1x NVIDIA L40S 48GB | Fallback / staged validation |
-| Multi-GPU | g6e.48xlarge | 8x NVIDIA L40S 48GB | Primary training (DDP, ~6-7x faster) |
+| Single GPU | g6e.16xlarge | 1x NVIDIA L40S 48GB | Primary training (verified for all granularities) |
+| Multi-GPU | g6e.48xlarge | 8x NVIDIA L40S 48GB | Speed via DDP (requires reduced batch size for full mapping) |
 
 **Note:** Cluster IDs are ephemeral and will differ at execution time.
 
@@ -51,15 +51,16 @@ make build                  # -> dist/histological_image_analysis-0.1.0-py3-none
 
 ## Training Granularities
 
-The pipeline supports three mapping granularities, each with its own notebook:
+The pipeline supports three mapping granularities, with notebooks for frozen and unfrozen backbone:
 
-| Granularity | Classes | Notebook | Model Output Dir |
-|-------------|---------|----------|------------------|
-| **Coarse** | 6 (Cerebrum, Brain stem, Cerebellum, fiber tracts, VS, background) | `step9_finetune_coarse.ipynb` | `/dbfs/.../models/coarse_6class` |
-| **Depth-2** | 19 (18 brain structures at ontology depth 2 + background) | `step10_finetune_depth2.ipynb` | `/dbfs/.../models/depth2` |
-| **Full** | 1,328 (every structure in the Allen Brain ontology + background) | `step10_finetune_full.ipynb` | `/dbfs/.../models/full` |
+| Granularity | Classes | Notebook | Backbone | Model Output Dir |
+|-------------|---------|----------|----------|------------------|
+| **Coarse** | 6 | `finetune_coarse.ipynb` | Frozen | `/dbfs/.../models/coarse_6class` |
+| **Depth-2** | 19 | `finetune_depth2.ipynb` | Frozen | `/dbfs/.../models/depth2` |
+| **Full** | 1,328 | `finetune_full.ipynb` | Frozen | `/dbfs/.../models/full` |
+| **Full (unfrozen)** | 1,328 | `finetune_unfrozen.ipynb` | Last 4 blocks unfrozen | `/dbfs/.../models/unfrozen` |
 
-All three use the same pipeline code (`ontology.py`, `ccfv3_slicer.py`, `dataset.py`, `training.py`). The only differences are which mapping function is called and the batch size.
+All notebooks use the same pipeline code (`ontology.py`, `ccfv3_slicer.py`, `dataset.py`, `training.py`). The unfrozen notebook adds differential learning rate (backbone 1e-5, head 1e-4) and trains for 100 epochs with early stopping.
 
 ## Databricks Deployment
 
@@ -71,9 +72,10 @@ make deploy
 
 # Or individually:
 make deploy-wheel              # Build + upload wheel to DBFS
-make deploy-notebook           # Upload coarse notebook (step 9)
-make deploy-notebook-depth2    # Upload depth-2 notebook (step 10)
-make deploy-notebook-full      # Upload full-mapping notebook (step 10)
+make deploy-notebook           # Upload coarse notebook
+make deploy-notebook-depth2    # Upload depth-2 notebook
+make deploy-notebook-full      # Upload full-mapping notebook
+make deploy-notebook-unfrozen  # Upload unfrozen-backbone notebook
 ```
 
 ### Step 2: Staged Validation (Cells 0-4)
@@ -88,7 +90,7 @@ Open the notebook on Databricks and run cells one at a time:
 | 3 | Build data pipeline | Classes and split sizes print, sample shape `(3, 518, 518)` |
 | 4 | Create model + forward pass | Logits shape `(1, NUM_LABELS, 518, 518)`, "Forward pass OK" |
 
-Run `make validate` for a detailed checklist with expected outputs (coarse notebook).
+Run `make validate` for a detailed checklist with expected outputs.
 
 ### Step 3: Full Training (Cells 5-7)
 
@@ -96,13 +98,18 @@ After cells 0-4 pass:
 
 | Cell | What It Does |
 |------|-------------|
-| 5 | Train for 50 epochs with MLflow logging |
+| 5 | Train with MLflow logging (50 epochs frozen, 100 epochs unfrozen) |
 | 6 | Evaluate on val set, per-class IoU report, visualize predictions vs ground truth |
 | 7 | Save final model to DBFS + close MLflow run |
 
 ### Multi-GPU (DDP)
 
-No code changes needed. Just run any notebook on the multi-GPU cluster (g6e.48xlarge, 8x L40S). HF Trainer auto-detects `WORLD_SIZE > 1` and wraps the model in DDP. Expect ~6-7x speedup.
+No code changes needed. Just run any notebook on a multi-GPU cluster. HF Trainer auto-detects
+`WORLD_SIZE > 1` and wraps the model in DDP.
+
+**Important:** For the full 1,328-class mapping, use `batch_size=2` with `gradient_accumulation_steps=2`
+on multi-GPU to avoid OOM from per-GPU DDP overhead. See [docs/step10_gpu_memory_review.md](docs/step10_gpu_memory_review.md)
+for details. Single-GPU runs with `batch_size=4` have been verified to work without issues.
 
 ## Training Results
 
@@ -110,10 +117,65 @@ No code changes needed. Just run any notebook on the multi-GPU cluster (g6e.48xl
 |-----|-------------|-------|------|-------------|---------|---------|
 | 1 | Coarse 6-class | spatial | 50.7% | 78.8% | 23 min | 1x L40S |
 | 2 | Coarse 6-class | interleaved | **88.0%** | **95.8%** | 23 min | 1x L40S |
-| 3 | Depth-2 19-class | interleaved | *pending* | *pending* | ~4-5 min est. | 8x L40S |
-| 4 | Full 1,328-class | interleaved | *pending* | *pending* | ~5-10 min est. | 8x L40S |
+| 3 | Depth-2 19-class | interleaved | **69.6%** | **95.5%** | 25 min | 1x L40S |
+| 4 | Full 1,328-class (frozen) | interleaved | **60.3%** | **88.9%** | 5.5 hrs | 1x L40S |
+| 5 | Full 1,328-class (unfrozen) | interleaved | **68.8%** | — | 11.3 hrs | 1x L40S |
 
 **Run 1 → Run 2 lesson:** Contiguous spatial split along AP axis excluded all Cerebrum pixels from val/test (Cerebrum is anterior-only in mouse brain). Interleaved split fixed this — every 10th slice goes to val/test, ensuring all brain regions appear in all splits.
+
+**Run 3 (depth-2):** 15 of 19 classes had valid IoU (4 classes absent from val set). Top classes: Cerebrum 95.8%, Brain stem 94.5%, Cerebellum 93.0%. Lowest: extrapyramidal fiber systems 44.4%.
+
+**Run 4 (full, frozen):** 503 of 1,328 classes had valid IoU (825 absent from val). Top: Caudoputamen 95.2%, Background 94.3%, Main olfactory bulb 93.8%. See [docs/dinov2_model_research.md](docs/dinov2_model_research.md) for analysis and next-step recommendations.
+
+**Run 5 (full, unfrozen backbone):** +8.5% mIoU gain from unfreezing last 4 DINOv2 blocks (20-23) with differential LR (backbone 1e-5, head 1e-4). 100 epochs, batch=2 + grad_accum=2. See [docs/step11_plan.md](docs/step11_plan.md) for deployment lessons (OOM, BatchNorm, gradient checkpointing fixes).
+
+## Using Trained Models
+
+### Quick Start (PhD Researchers)
+
+**Run inference on your brain tissue images:**
+
+```bash
+# 1. Download model (~1.2 GB, requires Databricks CLI)
+databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/unfrozen ./models/dinov2-upernet-unfrozen
+
+# 2. Run inference on a single image
+python scripts/run_inference.py --image path/to/brain_slice.jpg --output results/
+
+# 3. Or batch process a directory
+python scripts/run_inference.py --image-dir images/ --output results/
+```
+
+**Compute Requirements:**
+- ✅ **Runs on laptop** (CPU or GPU)
+- RAM: 8 GB minimum, 16 GB recommended
+- CPU inference: ~10-30 seconds per image
+- GPU inference: ~1-5 seconds per image (optional)
+
+**Output:** Segmentation masks + visualizations showing predicted brain regions
+
+### Advanced Usage
+
+```bash
+# Load directly from MLflow (no download)
+python -c "
+import mlflow.transformers
+model = mlflow.transformers.load_model('runs:/6cc49e1ccb0d4b30b371e9a071dcbe6f/model')
+"
+
+# Custom model path
+python scripts/run_inference.py --image image.jpg --model ./models/custom-model --output results/
+
+# Force CPU (no GPU)
+python scripts/run_inference.py --image image.png --cpu --output results/
+```
+
+**Model size:** ~1.2-1.5 GB (excluded from git via `.gitignore`)
+
+**See also:**
+- [docs/model_download_guide.md](docs/model_download_guide.md) - Complete download guide, verification, troubleshooting
+- [scripts/run_inference.py](scripts/run_inference.py) - CLI inference tool with batch processing
+- [verify_model.py](verify_model.py) - Quick model verification script
 
 ## Project Structure
 
@@ -134,16 +196,21 @@ histological-image-analysis/
 │   ├── conftest.py                      # Shared fixtures
 │   └── fixtures/minimal_ontology.json   # 15-structure test fixture
 ├── notebooks/
-│   ├── step9_finetune_coarse.ipynb      # Coarse 6-class training
-│   ├── step10_finetune_depth2.ipynb     # Depth-2 19-class training
-│   └── step10_finetune_full.ipynb       # Full 1,328-class training
+│   ├── finetune_coarse.ipynb            # Coarse 6-class training
+│   ├── finetune_depth2.ipynb            # Depth-2 19-class training
+│   ├── finetune_full.ipynb              # Full 1,328-class training (frozen backbone)
+│   └── finetune_unfrozen.ipynb          # Full 1,328-class training (unfrozen backbone)
 ├── scripts/
 │   └── download_allen_data.py           # Local download of Allen Brain data
 ├── docs/                                # Design docs and progress tracking
 │   ├── progress.md                      # Full project history
-│   ├── step10_plan.md                   # Current step plan (for LLM continuity)
+│   ├── step10_plan.md                   # Step 10 plan (for LLM continuity)
+│   ├── step11_plan.md                   # Step 11 plan (backbone unfreezing)
+│   ├── dinov2_model_research.md         # Backbone size analysis and recommendations
+│   ├── finetuning_recommendations.md    # Comprehensive fine-tuning roadmap
+│   ├── step10_gpu_memory_review.md      # GPU memory lessons from full-mapping runs
 │   └── joyful-popping-planet.md         # Step 9 tracker
-├── Makefile                             # Build, test, deploy commands (12 targets)
+├── Makefile                             # Build, test, deploy commands (14 targets)
 ├── .env.example                         # Environment variable template
 ├── pyproject.toml                       # Dependencies and build config
 └── uv.lock                              # Locked dependencies
@@ -157,9 +224,10 @@ histological-image-analysis/
 │                                                                  │
 │  Notebooks (thin orchestration):                                 │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │ step9_finetune_coarse.ipynb    (6 classes, coarse)        │  │
-│  │ step10_finetune_depth2.ipynb   (19 classes, depth-2)      │  │
-│  │ step10_finetune_full.ipynb     (1,328 classes, full)      │  │
+│  │ finetune_coarse.ipynb          (6 classes, coarse)        │  │
+│  │ finetune_depth2.ipynb          (19 classes, depth-2)      │  │
+│  │ finetune_full.ipynb            (1,328 classes, frozen)    │  │
+│  │ finetune_unfrozen.ipynb        (1,328 classes, unfrozen)  │  │
 │  │                                                            │  │
 │  │ Cell 0: %pip install wheel from DBFS                      │  │
 │  │ Cell 1: Configuration (paths, hyperparams, mapping type)  │  │

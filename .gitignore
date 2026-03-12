@@ -1,6 +1,11 @@
 # Downloaded data (binary, ~3 GB+)
 data/
 
+# Trained models (too large for GitHub - use MLflow or model registry)
+models/
+*.safetensors
+*.bin
+
 # Python
 __pycache__/
 *.pyc
