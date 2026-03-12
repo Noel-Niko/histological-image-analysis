@@ -11,7 +11,9 @@ from transformers import (
     UperNetForSemanticSegmentation,
 )
 
+from histological_image_analysis.losses import CombinedDiceCELoss
 from histological_image_analysis.training import (
+    WeightedLossUperNet,
     compute_metrics,
     create_model,
     create_trainer,
@@ -457,3 +459,118 @@ class TestCreateTrainer:
             num_labels=TINY_NUM_LABELS,
         )
         assert isinstance(trainer, Trainer)
+
+
+# ===========================================================================
+# TestWeightedLossUperNet
+# ===========================================================================
+
+
+class TestWeightedLossUperNet:
+    """Test UperNet subclass with custom combined loss."""
+
+    @pytest.fixture
+    def loss_fn(self):
+        weights = torch.ones(TINY_NUM_LABELS)
+        weights[0] = 0.1  # low weight for background
+        return CombinedDiceCELoss(
+            class_weights=weights, alpha=0.5, ignore_index=255,
+        )
+
+    @pytest.fixture
+    def weighted_model(self, tiny_backbone_config, loss_fn):
+        return create_model(
+            num_labels=TINY_NUM_LABELS,
+            freeze_backbone=False,
+            backbone_config=tiny_backbone_config,
+            hidden_size=64,
+            auxiliary_channels=32,
+            loss_fn=loss_fn,
+        )
+
+    def test_returns_upernet_subclass(self, weighted_model):
+        assert isinstance(weighted_model, UperNetForSemanticSegmentation)
+        assert isinstance(weighted_model, WeightedLossUperNet)
+
+    def test_forward_produces_loss(self, weighted_model, synthetic_batch):
+        output = weighted_model(**synthetic_batch)
+        assert output.loss is not None
+        assert output.loss.ndim == 0
+
+    def test_forward_loss_is_finite(self, weighted_model, synthetic_batch):
+        output = weighted_model(**synthetic_batch)
+        assert torch.isfinite(output.loss)
+
+    def test_forward_without_labels_no_loss(self, weighted_model):
+        weighted_model.eval()
+        x = torch.randn(1, 3, TINY_IMAGE_SIZE, TINY_IMAGE_SIZE)
+        output = weighted_model(pixel_values=x)
+        assert output.loss is None
+        assert output.logits is not None
+
+    def test_custom_loss_differs_from_default(
+        self, tiny_backbone_config, loss_fn, synthetic_batch,
+    ):
+        """Loss value differs from default CE-only model."""
+        default_model = create_model(
+            num_labels=TINY_NUM_LABELS,
+            freeze_backbone=False,
+            backbone_config=tiny_backbone_config,
+            hidden_size=64,
+            auxiliary_channels=32,
+        )
+        custom_model = create_model(
+            num_labels=TINY_NUM_LABELS,
+            freeze_backbone=False,
+            backbone_config=tiny_backbone_config,
+            hidden_size=64,
+            auxiliary_channels=32,
+            loss_fn=loss_fn,
+        )
+        # Copy weights so only the loss function differs
+        custom_model.load_state_dict(default_model.state_dict(), strict=False)
+
+        loss_default = default_model(**synthetic_batch).loss
+        loss_custom = custom_model(**synthetic_batch).loss
+        # Losses should be different due to Dice component + class weights
+        assert not torch.allclose(loss_default, loss_custom)
+
+    def test_logits_shape_unchanged(self, weighted_model, synthetic_batch):
+        output = weighted_model(**synthetic_batch)
+        b = synthetic_batch["pixel_values"].shape[0]
+        h = synthetic_batch["pixel_values"].shape[2]
+        w = synthetic_batch["pixel_values"].shape[3]
+        assert output.logits.shape == (b, TINY_NUM_LABELS, h, w)
+
+    def test_backward_pass_works(self, weighted_model, synthetic_batch):
+        output = weighted_model(**synthetic_batch)
+        output.loss.backward()
+        has_grad = any(
+            p.grad is not None and p.grad.abs().sum() > 0
+            for p in weighted_model.parameters()
+            if p.requires_grad
+        )
+        assert has_grad
+
+    def test_create_model_with_loss_fn_returns_weighted(
+        self, tiny_backbone_config, loss_fn,
+    ):
+        model = create_model(
+            num_labels=TINY_NUM_LABELS,
+            backbone_config=tiny_backbone_config,
+            hidden_size=64,
+            auxiliary_channels=32,
+            loss_fn=loss_fn,
+        )
+        assert isinstance(model, WeightedLossUperNet)
+
+    def test_create_model_without_loss_fn_returns_base(
+        self, tiny_backbone_config,
+    ):
+        model = create_model(
+            num_labels=TINY_NUM_LABELS,
+            backbone_config=tiny_backbone_config,
+            hidden_size=64,
+            auxiliary_channels=32,
+        )
+        assert type(model) is UperNetForSemanticSegmentation

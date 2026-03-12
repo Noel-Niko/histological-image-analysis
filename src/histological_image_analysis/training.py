@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from torch import nn
 from transformers import (
     AutoBackbone,
     Dinov2Config,
@@ -21,6 +22,7 @@ from transformers import (
     UperNetConfig,
     UperNetForSemanticSegmentation,
 )
+from transformers.modeling_outputs import SemanticSegmenterOutput
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +136,124 @@ def make_compute_metrics(
     return _compute
 
 
+class WeightedLossUperNet(UperNetForSemanticSegmentation):
+    """UperNet with custom combined Dice + CE loss.
+
+    Overrides the loss computation in ``forward()`` to use a custom loss
+    function instead of the default unweighted ``CrossEntropyLoss``.
+    The custom loss is applied to both the main decode head and the
+    auxiliary head.
+
+    Parameters
+    ----------
+    config : UperNetConfig
+        Model configuration (passed to parent).
+    """
+
+    def set_loss_fn(self, loss_fn: nn.Module) -> None:
+        """Attach a custom loss function after construction.
+
+        Parameters
+        ----------
+        loss_fn : nn.Module
+            Loss function accepting ``(logits, labels)`` and returning
+            a scalar tensor.
+        """
+        self._custom_loss_fn = loss_fn
+
+    def forward(
+        self,
+        pixel_values: torch.Tensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        labels: torch.Tensor | None = None,
+        return_dict: bool | None = None,
+        **kwargs,
+    ) -> tuple | SemanticSegmenterOutput:
+        """Forward pass with custom loss computation.
+
+        Identical to ``UperNetForSemanticSegmentation.forward()``
+        except the loss block is replaced with the custom loss function
+        applied to both main and auxiliary logits.
+        """
+        if labels is not None and self.config.num_labels == 1:
+            raise ValueError("The number of labels should be greater than one")
+
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
+
+        outputs = self.backbone.forward_with_filtered_kwargs(
+            pixel_values,
+            output_hidden_states=output_hidden_states,
+            output_attentions=output_attentions,
+        )
+        features = outputs.feature_maps
+
+        logits = self.decode_head(features)
+        logits = nn.functional.interpolate(
+            logits,
+            size=pixel_values.shape[2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+
+        auxiliary_logits = None
+        if self.auxiliary_head is not None:
+            auxiliary_logits = self.auxiliary_head(features)
+            auxiliary_logits = nn.functional.interpolate(
+                auxiliary_logits,
+                size=pixel_values.shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+
+        loss = None
+        if labels is not None:
+            loss_fn = getattr(self, "_custom_loss_fn", None)
+            if loss_fn is not None:
+                loss = loss_fn(logits, labels)
+                if auxiliary_logits is not None:
+                    loss = loss + self.config.auxiliary_loss_weight * loss_fn(
+                        auxiliary_logits, labels,
+                    )
+            else:
+                # Fallback to default CE (same as parent)
+                from torch.nn import CrossEntropyLoss
+
+                loss_fct = CrossEntropyLoss(
+                    ignore_index=self.config.loss_ignore_index,
+                )
+                loss = loss_fct(logits, labels)
+                if auxiliary_logits is not None:
+                    auxiliary_loss = loss_fct(auxiliary_logits, labels)
+                    loss += self.config.auxiliary_loss_weight * auxiliary_loss
+
+        if not return_dict:
+            if output_hidden_states:
+                output = (logits,) + outputs[1:]
+            else:
+                output = (logits,) + outputs[2:]
+            return ((loss,) + output) if loss is not None else output
+
+        return SemanticSegmenterOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+
 def create_model(
     num_labels: int,
     freeze_backbone: bool = True,
@@ -143,6 +263,7 @@ def create_model(
     auxiliary_channels: int = 256,
     auxiliary_loss_weight: float = 0.4,
     loss_ignore_index: int = 255,
+    loss_fn: nn.Module | None = None,
 ) -> UperNetForSemanticSegmentation:
     """Create a UperNet model with DINOv2 backbone for semantic segmentation.
 
@@ -166,6 +287,10 @@ def create_model(
         Weight for auxiliary loss (default 0.4).
     loss_ignore_index : int
         Label value to ignore in loss computation (default 255).
+    loss_fn : nn.Module or None
+        Custom loss function accepting ``(logits, labels)`` and returning
+        a scalar tensor.  When provided, ``WeightedLossUperNet`` is used
+        instead of the base ``UperNetForSemanticSegmentation``.
 
     Returns
     -------
@@ -201,7 +326,11 @@ def create_model(
     )
 
     # Create model (random weights everywhere)
-    model = UperNetForSemanticSegmentation(config)
+    if loss_fn is not None:
+        model = WeightedLossUperNet(config)
+        model.set_loss_fn(loss_fn)
+    else:
+        model = UperNetForSemanticSegmentation(config)
 
     # Load pretrained backbone weights if available
     if pretrained_backbone_path is not None:

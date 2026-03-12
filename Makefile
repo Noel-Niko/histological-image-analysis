@@ -15,8 +15,10 @@ NOTEBOOK_FULL_SRC  := notebooks/finetune_full.ipynb
 NOTEBOOK_FULL_DEST := $(WORKSPACE_BASE)/notebooks/finetune_full
 NOTEBOOK_UNFROZEN_SRC  := notebooks/finetune_unfrozen.ipynb
 NOTEBOOK_UNFROZEN_DEST := $(WORKSPACE_BASE)/notebooks/finetune_unfrozen
+NOTEBOOK_WEIGHTED_SRC  := notebooks/finetune_weighted_loss.ipynb
+NOTEBOOK_WEIGHTED_DEST := $(WORKSPACE_BASE)/notebooks/finetune_weighted_loss
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy validate help
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy validate help
 
 # ── Local Development ──────────────────────────────────────────────────
 
@@ -79,7 +81,16 @@ deploy-notebook-unfrozen: ## Upload unfrozen-backbone training notebook to works
 		--profile $(DATABRICKS_PROFILE)
 	@echo "Notebook uploaded to $(NOTEBOOK_UNFROZEN_DEST)"
 
-deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen ## Full deployment (wheel + all notebooks)
+deploy-notebook-weighted-loss: ## Upload weighted-loss training notebook to workspace
+	databricks workspace mkdirs $(dir $(NOTEBOOK_WEIGHTED_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_WEIGHTED_DEST) \
+		--file $(NOTEBOOK_WEIGHTED_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_WEIGHTED_DEST)"
+
+deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss ## Full deployment (wheel + all notebooks)
 	@echo ""
 	@echo "=== Deployment complete ==="
 	@echo ""
@@ -88,6 +99,7 @@ deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full
 	@echo "  - Depth-2 (19 classes):         $(NOTEBOOK_D2_DEST)"
 	@echo "  - Full (1,328 classes, frozen):  $(NOTEBOOK_FULL_DEST)"
 	@echo "  - Full (1,328 classes, unfrozen): $(NOTEBOOK_UNFROZEN_DEST)"
+	@echo "  - Full (weighted Dice+CE loss):   $(NOTEBOOK_WEIGHTED_DEST)"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Open a notebook on Databricks"
