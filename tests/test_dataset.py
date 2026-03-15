@@ -199,6 +199,135 @@ class TestAugmentation:
         assert torch.equal(r1, r2)
 
 
+class TestExtendedAugmentation:
+    """Test extended augmentation (Step 11c): elastic deformation, blur, 90° rotation."""
+
+    @pytest.fixture
+    def cropped_pair(self, mock_slicer_large, mapping):
+        """Get a padded+cropped (image, mask) pair for testing helper methods."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=518, augment=True
+        )
+        image, mask = ds._slices[0]
+        image, mask = ds._pad_if_needed(image, mask)
+        image, mask = ds._center_crop(image, mask)
+        return ds, image, mask
+
+    # --- Elastic Deformation ---
+
+    def test_elastic_deform_preserves_shape(self, cropped_pair):
+        """Output shape must match input shape."""
+        ds, image, mask = cropped_pair
+        img_out, msk_out = ds._elastic_deform(image, mask)
+        assert img_out.shape == image.shape
+        assert msk_out.shape == mask.shape
+
+    def test_elastic_deform_preserves_mask_dtype(self, cropped_pair):
+        """Elastic deformation must keep mask as int64."""
+        ds, image, mask = cropped_pair
+        _, msk_out = ds._elastic_deform(image, mask)
+        assert msk_out.dtype == np.int64
+
+    def test_elastic_deform_preserves_mask_values(self, cropped_pair):
+        """Elastic deformation must not introduce new class IDs (nearest-neighbor)."""
+        ds, image, mask = cropped_pair
+        original_ids = set(mask.ravel())
+        original_ids.add(0)  # fill value for out-of-bounds
+        for _ in range(10):
+            _, msk_out = ds._elastic_deform(image, mask)
+            output_ids = set(msk_out.ravel())
+            assert output_ids.issubset(original_ids), (
+                f"Elastic deformation introduced new IDs: {output_ids - original_ids}"
+            )
+
+    def test_elastic_deform_changes_image(self, cropped_pair):
+        """Elastic deformation should actually modify the image."""
+        ds, image, mask = cropped_pair
+        img_out, _ = ds._elastic_deform(image, mask)
+        assert not np.array_equal(image, img_out)
+
+    # --- Gaussian Blur ---
+
+    def test_gaussian_blur_preserves_shape(self, cropped_pair):
+        """Blur should not change image dimensions."""
+        ds, image, _ = cropped_pair
+        blurred = ds._gaussian_blur(image)
+        assert blurred.shape == image.shape
+
+    def test_gaussian_blur_returns_uint8(self, cropped_pair):
+        """Blur output must be uint8 for downstream normalization."""
+        ds, image, _ = cropped_pair
+        blurred = ds._gaussian_blur(image)
+        assert blurred.dtype == np.uint8
+
+    def test_gaussian_blur_reduces_high_frequency(self, cropped_pair):
+        """Blurred image should have less high-frequency content."""
+        ds, image, _ = cropped_pair
+        blurred = ds._gaussian_blur(image, sigma_range=(1.5, 2.0))
+        # Laplacian (second derivative) magnitude should be lower after blur
+        orig_laplacian = np.abs(np.diff(image.astype(float), n=2, axis=0)).mean()
+        blur_laplacian = np.abs(np.diff(blurred.astype(float), n=2, axis=0)).mean()
+        assert blur_laplacian < orig_laplacian
+
+    # --- Random 90-degree Rotation ---
+
+    def test_rot90_preserves_shape(self, cropped_pair):
+        """Square crop rotated 90 degrees maintains shape."""
+        ds, image, mask = cropped_pair
+        img_out, msk_out = ds._random_rot90(image, mask)
+        assert img_out.shape == image.shape
+        assert msk_out.shape == mask.shape
+
+    def test_rot90_preserves_mask_integrity(self, cropped_pair):
+        """90-degree rotation is exact — no interpolation, no new values."""
+        ds, image, mask = cropped_pair
+        original_ids = set(mask.ravel())
+        for _ in range(10):
+            _, msk_out = ds._random_rot90(image, mask)
+            assert set(msk_out.ravel()) == original_ids
+
+    def test_rot90_applies_all_orientations(self, mock_slicer_large, mapping):
+        """Over many trials, all 4 orientations should appear."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=64, augment=True
+        )
+        # Use a small image with a unique corner to detect orientation
+        image = np.arange(64 * 64, dtype=np.uint8).reshape(64, 64)
+        mask = np.zeros((64, 64), dtype=np.int64)
+        orientations = set()
+        np.random.seed(42)
+        for _ in range(100):
+            img_out, _ = ds._random_rot90(image, mask)
+            orientations.add(img_out[0, 0])
+        assert len(orientations) >= 3  # At least 3 of 4 orientations seen
+
+    # --- Full Pipeline Integration ---
+
+    def test_extended_augmentation_preserves_mask_integrity_full_pipeline(
+        self, mock_slicer_large, mapping
+    ):
+        """Full augmentation pipeline must preserve mask dtype and valid values."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=518, augment=True
+        )
+        for _ in range(20):
+            item = ds[0]
+            labels = item["labels"]
+            assert labels.dtype == torch.long
+            assert labels.min() >= 0
+
+    def test_extended_augmentation_stochastic_variation(
+        self, mock_slicer_large, mapping
+    ):
+        """Extended augmentation should produce diverse outputs."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=518, augment=True
+        )
+        results = [ds[0]["pixel_values"] for _ in range(10)]
+        all_same = all(torch.equal(results[0], r) for r in results[1:])
+        assert not all_same
+
+
 class TestNormalization:
     """Test ImageNet normalization is applied correctly."""
 

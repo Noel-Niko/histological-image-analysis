@@ -243,19 +243,37 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
     - 3 deployment failures resolved: OOM at batch=4, BatchNorm ValueError at batch=1, DDP gradient checkpointing bug (`use_reentrant=False` required). Final: batch=2, grad_accum=2.
     - MLflow artifact gap fixed: all 4 notebooks now call `mlflow.log_artifacts()` before `mlflow.end_run()`.
     - LESSONS_LEARNED.md updated: gradient checkpointing + frozen boundary, PSP BatchNorm minimum batch, DDP on single-GPU Databricks, MLflow artifact logging.
-12. **Step 11b — Class-weighted Dice + CE loss** — **CODE COMPLETE (awaiting Databricks run)**. See `docs/step11b_plan.md`.
-    - New module: `src/histological_image_analysis/losses.py` — `DiceLoss`, `CombinedDiceCELoss`, `compute_class_weights_from_dataset()`
-    - `WeightedLossUperNet` subclass in `training.py` — overrides `forward()` to apply custom loss to both main and auxiliary heads
-    - `create_model()` updated with optional `loss_fn` parameter (backward compatible)
-    - Combined loss: `L = alpha * weighted_CE + (1-alpha) * Dice` with inverse-frequency class weights clipped at 95th percentile
-    - Chunked Dice computation (`chunk_size=64`) for memory efficiency with 1,328 classes
-    - 36 new tests (27 in `test_losses.py` + 9 in `test_training.py`), all pass
-    - Notebook: `notebooks/finetune_weighted_loss.ipynb` (8 cells, same pattern as unfrozen)
-    - **Pending:** Deploy + run on Databricks (Run 6)
-13. **Future steps** — after Step 11b:
-    - Step 11c: Extended augmentation (elastic deformation, blur, 90° rotations)
-    - Step 11d: Hierarchical loss (coarse + depth-2 + full heads)
-    - Step 12: Cross-stain/species generalization (Phase 2 of finetuning_recommendations.md)
+12. **Step 11b — Class-weighted Dice + CE loss** — **DONE (NEGATIVE RESULT)**. See `docs/step11b_plan.md`.
+    - **Run 6 (weighted loss, 2026-03-12):** mIoU **67.2%** (−1.6% vs unfrozen 68.8%), accuracy 89.7%, ~33 hrs on 1x L40S, 100 epochs.
+    - Combined loss `L = 0.5 * weighted_CE + 0.5 * Dice` with inverse-frequency class weights clipped at 95th percentile.
+    - 503 classes with valid IoU — identical to Run 5 (no new classes discovered). 657 classes have zero training pixels.
+    - Regression likely caused by: (a) alpha=0.5 too aggressive — Dice diluted CE gradient signal on well-learned common classes, (b) Dice mean over only present-in-batch classes (4-10) produces noisy gradients for 1,328-class problem.
+    - Infrastructure retained: `losses.py`, `WeightedLossUperNet`, `create_model(loss_fn=...)` remain available for future experiments with different alpha or focal loss.
+    - Model saved: `/dbfs/FileStore/allen_brain_data/models/weighted-loss`.
+13. **Step 11c — Extended augmentation** — **DONE (NEGATIVE RESULT)**. See `docs/step11c_plan.md`.
+    - **Run 7 (augmented, 2026-03-15):** mIoU **62.3%** (−6.5% vs unfrozen 68.8%), accuracy 90.1%, eval loss 0.4894, 100 epochs on 1x L40S.
+    - Extended `_apply_augmentation()` in `dataset.py` with 3 new transforms:
+      - Random 90° rotation (50% prob) — `np.rot90`, exact, no interpolation artifacts
+      - Gaussian blur (30% prob, σ=0.5-2.0) — `scipy.ndimage.gaussian_filter`, image only
+      - Elastic deformation (30% prob, α=50, σ=5) — `scipy.ndimage.map_coordinates`, order=0 for mask
+    - 503 classes valid (identical to Runs 5 and 6). 657 classes have zero training pixels.
+    - Regression caused by: (a) augmentation too aggressive for 1,016 training samples — compounding 6 transforms heavily distorts every sample, (b) elastic deformation (α=50) warps anatomical boundaries, creating ambiguous labels, (c) model converges to smoother/less precise predictions (accuracy +0.7% but mIoU −6.5%).
+    - MLflow artifacts saved with corrected pattern: `mlflow.transformers.log_model()` — confirmed working.
+    - Model saved: `/dbfs/FileStore/allen_brain_data/models/augmented`.
+    - Infrastructure retained: augmentation code and tests remain for possible future use with reduced intensity.
+14. **Step 12 — Data-centric improvements** — **PLANNING**. See `docs/step12_plan.md`.
+    - **Diagnosis:** Data scarcity is the binding constraint (1,016 samples / 1,328 classes / 657 with zero pixels). Model rejects high-intensity interventions (Runs 6-7 both regressed).
+    - **Revised sequence:**
+      - Step 0: TTA on Run 5 model (free mIoU, zero compute)
+      - Step 1: Revert augmentation to Run 5 defaults (add `augmentation_preset` parameter)
+      - Step 2: Prune output head to ~671 classes (remove softmax dilution)
+      - Step 3: Multi-axis slicing — sagittal + axial for training only, coronal val (3× data)
+      - Step 4: Run 8: pruned + multi-axis + baseline aug + CE loss
+      - Step 5: Focal loss sweep γ ∈ {2,3,5} (conditional on Run 8)
+      - Step 6: Sliding window eval (full-slice measurement)
+    - **Note on augmentation code:** The 3 Step 11c transforms remain in `dataset.py` and are always active when `augment=True`. Step 1 adds `augmentation_preset` to control this.
+15. **Future steps** — after Step 12:
+    - Cross-stain/species generalization (Phase 2 of `finetuning_recommendations.md`)
     - DINOv2-Giant: only after above exhausted (see `docs/dinov2_model_research.md`)
 
 ---
@@ -302,8 +320,53 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Step 11a-i (local inference tooling):** DONE. Model logged to MLflow (run ID `6cc49e1ccb0d4b30b371e9a071dcbe6f`). Created local inference infrastructure for PhD users: (1) `docs/model_download_guide.md` — comprehensive guide with 3 download methods (DBFS, MLflow, direct load), verification, troubleshooting. (2) `scripts/run_inference.py` — CLI tool for batch inference on histological images. (3) `verify_model.py` — quick verification script. (4) Models excluded from git via `.gitignore` (~1.2 GB each). (5) README updated with "Using Trained Models" section. Download: `databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/unfrozen ./models/dinov2-upernet-unfrozen`. Inference example processes user-provided brain tissue images and outputs predicted segmentation masks with structure IDs. Script supports batch processing, GPU acceleration, and visualization. **Ready for PhD researcher testing.**
 
-**Step 11b (weighted loss):** CODE COMPLETE. New `losses.py` module: `DiceLoss` (chunked soft Dice, `chunk_size=64`), `CombinedDiceCELoss` (`alpha * weighted_CE + (1-alpha) * Dice`), `compute_class_weights_from_dataset()` (inverse-frequency, clipped at percentile). `WeightedLossUperNet` subclass in `training.py` overrides UperNet `forward()` to apply custom loss to both main + auxiliary heads — necessary because `SemanticSegmenterOutput` discards auxiliary logits. `create_model(loss_fn=...)` backward-compatible. 36 new tests (27 loss + 9 training), all pass. Notebook: `finetune_weighted_loss.ipynb`. Pending: Databricks Run 6.
+**Step 11b (weighted loss):** DONE — NEGATIVE RESULT. Run 6: mIoU **67.2%** (−1.6% vs unfrozen 68.8%), accuracy 89.7%, ~33 hrs, 100 epochs. Combined loss `0.5 * weighted_CE + 0.5 * Dice` with inverse-frequency weights. 503 classes valid (same as Run 5). Regression: alpha=0.5 too aggressive, Dice diluted CE signal on common classes without helping rare ones. 657 classes have zero training pixels — no loss function can help. Infrastructure retained for future use. Model: `/dbfs/FileStore/allen_brain_data/models/weighted-loss`.
 
-**Next: Deploy Step 11b and run on Databricks.**
+**Step 11c (extended augmentation):** DONE — NEGATIVE RESULT. Run 7: mIoU **62.3%** (−6.5% vs unfrozen 68.8%), accuracy 90.1%, eval loss 0.4894, 100 epochs. Extended `_apply_augmentation()` with 3 new transforms (rot90, blur, elastic deformation). Regression: augmentation too aggressive for 1,016 samples — elastic deformation (α=50) warps anatomical boundaries, compounding 6 transforms heavily distorts every sample. Accuracy paradox: +0.7% accuracy but −6.5% mIoU — model learned smoother/less precise predictions. Infrastructure (code + 12 tests) retained. MLflow artifacts saved successfully with corrected pattern. Model: `/dbfs/FileStore/allen_brain_data/models/augmented`.
 
-**Repo files:** `docs/progress.md` (this file), `docs/model_download_guide.md` (local inference guide), `docs/step11b_plan.md` (Step 11b plan — NEW), `docs/step11_plan.md` (Step 11 plan — complete), `docs/step10_plan.md` (Step 10 plan — complete), `docs/finetuning_recommendations.md` (comprehensive roadmap), `docs/dinov2_model_research.md` (backbone research), `docs/step10_gpu_memory_review.md` (GPU memory lessons), `docs/joyful-popping-planet.md` (Step 9 tracker — complete), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training,losses}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training,losses}.py` + `conftest.py` + `fixtures/`. Notebooks: `notebooks/finetune_coarse.ipynb`, `notebooks/finetune_depth2.ipynb`, `notebooks/finetune_full.ipynb`, `notebooks/finetune_unfrozen.ipynb`, `notebooks/finetune_weighted_loss.ipynb` (NEW). Scripts: `scripts/download_allen_data.py`, `scripts/run_inference.py`. Verification: `verify_model.py`. Infra: `Makefile` (16 targets), `.env.example`, `README.md`.
+**Best model remains Run 5 (unfrozen baseline): 68.8% mIoU.** Three experiments after Run 5 (weighted loss −1.6%, augmentation −6.5%) failed to improve. Next steps should explore different directions: hierarchical loss, focal loss, or lighter augmentation (e.g., elastic-only at lower α, or remove elastic entirely and keep only rot90 + blur).
+
+**MLflow artifact save pattern (CRITICAL — learned from Run 6 recovery):**
+All future training notebooks MUST follow this pattern in the final save cell:
+1. Set `model.config.id2label` and `model.config.label2id` from `class_names` BEFORE saving — `create_model()` does not set these.
+2. `trainer.save_model(FINAL_MODEL_DIR)` — backup to DBFS.
+3. `processor.save_pretrained(FINAL_MODEL_DIR)` — trainer.save_model() does NOT save it.
+4. `mlflow.transformers.log_model(transformers_model=model, image_processor=processor, name="model", task="image-segmentation")` — full MLflow packaging.
+5. Do NOT use `mlflow.log_artifacts()` (raw file copy, no MLflow packaging). Do NOT pass `registered_model_name` unless it's a 3-level Unity Catalog path (`catalog.schema.model`). Always pass `task="image-segmentation"` explicitly.
+The older notebooks (`finetune_unfrozen.ipynb`, `finetune_weighted_loss.ipynb`) still use the old `mlflow.log_artifacts()` pattern. The `finetune_augmented.ipynb` uses the corrected pattern. Run 6 artifacts were recovered under MLflow run `55e3e0c9c98a4c65ade76bd65f2245ee`.
+
+**Training run history:**
+
+| Run | Config | mIoU | Delta | Runtime | Notebook | Model Dir |
+|-----|--------|------|-------|---------|----------|-----------|
+| 1 | Coarse 6-class, frozen, spatial split | 50.7% | — | 23 min | `finetune_coarse.ipynb` | overwritten |
+| 2 | Coarse 6-class, frozen, interleaved | 88.0% | +37.3% | 23 min | `finetune_coarse.ipynb` | `coarse_6class` |
+| 3 | Depth-2 19-class, frozen | 69.6% | — | 25 min | `finetune_depth2.ipynb` | `depth2_19class` |
+| 4 | Full 1,328-class, frozen | 60.3% | — | 5.5 hrs | `finetune_full.ipynb` | `full_1328class` |
+| **5** | **Full 1,328-class, unfrozen** | **68.8%** | **+8.5%** | **11.3 hrs** | `finetune_unfrozen.ipynb` | **`unfrozen`** |
+| 6 | Full 1,328-class, weighted Dice+CE | 67.2% | −1.6% | ~33 hrs | `finetune_weighted_loss.ipynb` | `weighted-loss` |
+| 7 | Full 1,328-class, extended augmentation | 62.3% | −6.5% | ~11-14 hrs | `finetune_augmented.ipynb` | `augmented` |
+
+All model dirs are under `/dbfs/FileStore/allen_brain_data/models/`. Best model: **Run 5 (unfrozen) at 68.8% mIoU.** Three consecutive experiments (weighted loss, augmentation) failed to improve on it.
+
+**Current augmentation pipeline** (`dataset.py:_apply_augmentation`):
+1. Horizontal flip (50%) — existing
+2. Random 90° rotation (50%) — Step 11c, `np.rot90`, exact
+3. Rotation ±15° (always, skip if |angle|≤0.5°) — existing
+4. Elastic deformation (30%, α=50, σ=5) — Step 11c, `scipy.ndimage.map_coordinates`
+5. Gaussian blur (30%, σ=0.5-2.0) — Step 11c, `scipy.ndimage.gaussian_filter`, image only
+6. Color jitter (always, brightness/contrast ±0.2) — existing, image only
+
+**Key constraints and lessons:**
+- Batch=1 fails: UperNet PSP BatchNorm needs ≥2 values per channel. Minimum batch=2.
+- Gradient checkpointing: backbone only, `use_reentrant=False` REQUIRED at frozen/unfrozen boundary.
+- `ddp_find_unused_parameters=True` needed: Databricks wraps in DDP even on single GPU.
+- `dataloader_num_workers=4` is the default in `get_training_args()`.
+- 657/1,328 classes have zero training pixels — no technique can learn absent classes.
+- PhD researchers will submit smaller sub-sections of brain tissue, NOT full coronal/sagittal sections (noted for future Phase 3 inference pipeline).
+
+**Data correction (2026-03-14):** Run 5 overall accuracy was documented as 89.4% in multiple .md files. Notebook output shows **92.48%**. Eval_loss is **0.3631**. All references corrected. The "accuracy paradox" analysis in step11c_plan.md (claiming Run 7 improved accuracy vs Run 5) was also wrong — Run 7's 90.1% is LOWER than Run 5's 92.5%.
+
+**Experimental results:** All training run data consolidated in `docs/experimental_results.md` — summary table, hyperparameter comparison, per-class IoU tables (all runs), training curves (Runs 3-7). Runs 1-2 training curves LOST (notebook outputs not preserved; those notebooks were never run on Databricks — original runs used step9/step10 prefixed notebooks).
+
+**Repo files:** `docs/progress.md` (this file), `docs/experimental_results.md` (consolidated run data for paper), `docs/step12_plan.md` (Step 12 plan), `docs/model_download_guide.md` (local inference guide), `docs/step11c_plan.md` (Step 11c plan + Run 7 results), `docs/step11b_plan.md` (Step 11b plan + Run 6 results), `docs/step11_plan.md` (Step 11 plan — complete), `docs/step10_plan.md` (Step 10 plan — complete), `docs/finetuning_recommendations.md` (comprehensive 4-phase roadmap with 15 recommendations), `docs/dinov2_model_research.md` (backbone research), `docs/step10_gpu_memory_review.md` (GPU memory lessons), `docs/joyful-popping-planet.md` (Step 9 tracker — complete), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training,losses}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training,losses}.py` + `conftest.py` + `fixtures/` — **181/181 pass**. Active notebooks: `notebooks/finetune_unfrozen.ipynb` (Run 5 baseline), `notebooks/finetune_augmented.ipynb` (Run 7). Historical notebooks moved to `notebooks/historical/` (finetune_coarse, finetune_depth2, finetune_full, finetune_weighted_loss, mlflow_log_unfrozen_model, recovery notebooks, step10 notebooks, find_model). Scripts: `scripts/{download_allen_data,run_inference}.py`. Verification: `verify_model.py`. Infra: `Makefile` (18 targets), `.env.example`, `README.md`.

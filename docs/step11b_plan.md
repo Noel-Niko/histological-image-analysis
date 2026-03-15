@@ -81,4 +81,62 @@ Additional ~1.4 GB for softmax probabilities (fp16, batch=2). Fits within 22 GB 
 | 7 | Create notebook | DONE — `finetune_weighted_loss.ipynb` |
 | 8 | Update Makefile | DONE — `deploy-notebook-weighted-loss` target |
 | 9 | Update docs/progress.md | DONE |
-| 10 | Deploy + run on Databricks | PENDING — user to run |
+| 10 | Deploy + run on Databricks | DONE — Run 6 completed |
+
+---
+
+## Run 6 Results — NEGATIVE RESULT
+
+**Run 6 (weighted Dice+CE, 2026-03-12):** mIoU **67.2%** (−1.6% vs unfrozen 68.8%)
+
+| Metric | Frozen (Run 4) | Unfrozen (Run 5) | Weighted Loss (Run 6) |
+|--------|----------------|-------------------|----------------------|
+| mIoU | 60.3% | 68.8% | **67.2%** |
+| Overall Accuracy | 88.9% | 92.5% | 89.7% |
+| Eval Loss | 0.4964 | 0.3631 | 0.4444 |
+| Training Loss | 0.352 | 0.284 | 1.710 |
+| Valid classes (non-NaN IoU) | 503 | 503 | 503 |
+| Runtime | 5.5 hrs | 11.3 hrs | ~33 hrs |
+| Epochs | 50 | 100 | 100 |
+
+### Top 10 classes by IoU
+| Class | IoU |
+|-------|-----|
+| Caudoputamen | 94.7% |
+| Nodulus (X) | 94.5% |
+| Main olfactory bulb | 93.3% |
+| Background | 92.0% |
+| Uvula (IX) | 91.7% |
+| Lobule III | 90.8% |
+| Pontine reticular nucleus | 90.1% |
+| Medial vestibular nucleus | 89.9% |
+| Declive (VI) | 89.8% |
+| Lobules IV-V | 89.8% |
+
+### Bottom 10 classes by IoU
+| Class | IoU |
+|-------|-----|
+| Primary visual area, layer 2/3 | 15.3% |
+| Retrosplenial area, lateral agranular part, layer 6b | 14.7% |
+| Posterolateral visual area, layer 2/3 | 14.0% |
+| Primary somatosensory area, trunk, layer 5 | 13.2% |
+| Central canal, spinal cord/medulla | 9.1% |
+| Posterolateral visual area, layer 4 | 9.0% |
+| Inferior olivary complex | 0.0% |
+| Central amygdalar nucleus, lateral part | 0.0% |
+| Paragigantocellular reticular nucleus, lateral part | 0.0% |
+| Frontal pole, layer 6b | 0.0% |
+
+### Analysis
+
+The weighted Dice+CE loss **regressed −1.6% mIoU** from the unfrozen baseline. Key observations:
+
+1. **No new classes discovered:** 503 classes with valid IoU — identical to Run 5. The 657 zero-pixel classes cannot be learned regardless of loss function.
+2. **Common classes degraded slightly:** Background dropped from ~94% to 92%, suggesting the inverse-frequency weights and Dice component pulled gradient signal away from well-learned structures without compensating on rare ones.
+3. **Training loss higher:** 1.71 vs 0.73 — expected since Dice loss adds a [0,1] component, but the combined loss landscape may be harder to optimize.
+4. **Dice component may dominate:** At alpha=0.5, Dice gets equal weight to CE. For 1,328 classes where most batch samples contain only 4-10 classes, the Dice mean over present classes may produce noisy gradients.
+
+### Possible improvements (not implemented)
+- **Higher alpha (0.8-0.9):** Preserve CE signal, add only light Dice regularization
+- **Focal loss instead of Dice:** Down-weight well-classified pixels rather than up-weighting rare classes
+- **Move to augmentation (Step 11c):** Orthogonal improvement — more training data diversity may help rare classes more than loss reweighting

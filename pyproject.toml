@@ -5,11 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "accelerate>=1.13.0",
     "huggingface-hub>=0.20",
     "matplotlib>=3.5",
     "numpy>=1.24",
     "Pillow>=10.0",
     "pynrrd>=1.1.0",
+    "scipy>=1.10",
     "svgpathtools>=1.6",
     "torch>=2.0",
     "torchvision>=0.15",
