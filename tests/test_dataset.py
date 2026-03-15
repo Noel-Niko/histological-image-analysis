@@ -22,7 +22,8 @@ def mock_slicer():
         mask = rng.integers(0, 6, size=(32, 40), dtype=np.int64)
         slices.append((img, mask))
 
-    def iter_slices_fn(split, mapping, split_strategy="spatial"):
+    def iter_slices_fn(split, mapping, split_strategy="spatial",
+                       multi_axis=False):
         if split == "train":
             yield from slices
         elif split == "val":
@@ -49,7 +50,8 @@ def mock_slicer_large():
         mask = rng.integers(0, 6, size=(800, 1140), dtype=np.int64)
         slices.append((img, mask))
 
-    def iter_slices_fn(split, mapping, split_strategy="spatial"):
+    def iter_slices_fn(split, mapping, split_strategy="spatial",
+                       multi_axis=False):
         yield from slices
 
     slicer.iter_slices = iter_slices_fn
@@ -326,6 +328,120 @@ class TestExtendedAugmentation:
         results = [ds[0]["pixel_values"] for _ in range(10)]
         all_same = all(torch.equal(results[0], r) for r in results[1:])
         assert not all_same
+
+
+class TestAugmentationPreset:
+    """Test augmentation_preset parameter (Step 12, Step 1)."""
+
+    def test_default_preset_is_baseline(self, mock_slicer_large, mapping):
+        """Default augmentation_preset should be 'baseline'."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=518, augment=True
+        )
+        assert ds._augmentation_preset == "baseline"
+
+    def test_extended_preset_accepted(self, mock_slicer_large, mapping):
+        """Extended preset should be accepted and stored."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=518, augment=True,
+            augmentation_preset="extended",
+        )
+        assert ds._augmentation_preset == "extended"
+
+    def test_none_preset_disables_augmentation(self, mock_slicer_large, mapping):
+        """Preset 'none' should produce deterministic output (same as augment=False)."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=518, augment=True,
+            augmentation_preset="none",
+        )
+        # Should produce same output on repeated calls (center crop, no transforms)
+        r1 = ds[0]["pixel_values"]
+        r2 = ds[0]["pixel_values"]
+        assert torch.equal(r1, r2)
+
+    def test_invalid_preset_raises(self, mock_slicer_large, mapping):
+        """Invalid preset should raise ValueError."""
+        with pytest.raises(ValueError, match="augmentation_preset"):
+            BrainSegmentationDataset(
+                mock_slicer_large, "train", mapping, crop_size=518, augment=True,
+                augmentation_preset="invalid",
+            )
+
+    def test_baseline_preset_preserves_mask_integrity(self, mock_slicer_large, mapping):
+        """Baseline preset should preserve mask dtype and valid values."""
+        ds = BrainSegmentationDataset(
+            mock_slicer_large, "train", mapping, crop_size=518, augment=True,
+            augmentation_preset="baseline",
+        )
+        for _ in range(10):
+            item = ds[0]
+            assert item["labels"].dtype == torch.long
+            assert item["labels"].min() >= 0
+
+    def test_backward_compatible_without_preset(self, mock_slicer, mapping):
+        """Existing code without augmentation_preset should still work."""
+        ds = BrainSegmentationDataset(
+            mock_slicer, "train", mapping, crop_size=64, augment=False
+        )
+        item = ds[0]
+        assert item["pixel_values"].shape == (3, 64, 64)
+
+
+class TestMultiAxisDataset:
+    """Test multi_axis parameter on BrainSegmentationDataset (Step 12, Step 3)."""
+
+    @pytest.fixture
+    def mock_slicer_3d(self):
+        """Mock slicer with a volume that has valid slices on all 3 axes."""
+        slicer = MagicMock()
+
+        # Simulate iter_slices behavior based on multi_axis parameter
+        rng = np.random.default_rng(42)
+        coronal_slices = [
+            (rng.integers(0, 255, size=(800, 1140), dtype=np.uint8),
+             rng.integers(0, 6, size=(800, 1140), dtype=np.int64))
+            for _ in range(3)
+        ]
+        extra_slices = [
+            (rng.integers(0, 255, size=(600, 900), dtype=np.uint8),
+             rng.integers(0, 6, size=(600, 900), dtype=np.int64))
+            for _ in range(5)
+        ]
+
+        def iter_slices_fn(split, mapping, split_strategy="spatial",
+                           multi_axis=False):
+            yield from coronal_slices
+            if multi_axis and split == "train":
+                yield from extra_slices
+
+        slicer.iter_slices = iter_slices_fn
+        return slicer, len(coronal_slices), len(coronal_slices) + len(extra_slices)
+
+    def test_multi_axis_train_more_samples(self, mock_slicer_3d, mapping):
+        """Multi-axis training dataset should have more samples."""
+        slicer, coronal_count, multi_count = mock_slicer_3d
+        ds_coronal = BrainSegmentationDataset(
+            slicer, "train", mapping, crop_size=518, augment=True,
+        )
+        ds_multi = BrainSegmentationDataset(
+            slicer, "train", mapping, crop_size=518, augment=True,
+            multi_axis=True,
+        )
+        assert len(ds_coronal) == coronal_count
+        assert len(ds_multi) == multi_count
+
+    def test_multi_axis_getitem_valid(self, mock_slicer_3d, mapping):
+        """Multi-axis samples should produce valid pixel_values and labels."""
+        slicer, _, _ = mock_slicer_3d
+        ds = BrainSegmentationDataset(
+            slicer, "train", mapping, crop_size=518, augment=False,
+            multi_axis=True,
+        )
+        for i in range(len(ds)):
+            item = ds[i]
+            assert item["pixel_values"].shape == (3, 518, 518)
+            assert item["labels"].shape == (518, 518)
+            assert item["labels"].dtype == torch.long
 
 
 class TestNormalization:

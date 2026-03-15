@@ -47,6 +47,8 @@ class BrainSegmentationDataset(Dataset):
         Use "interleaved" to ensure all brain regions appear in all splits.
     """
 
+    _VALID_PRESETS = ("baseline", "extended", "none")
+
     def __init__(
         self,
         slicer: CCFv3Slicer,
@@ -55,20 +57,36 @@ class BrainSegmentationDataset(Dataset):
         crop_size: int = 518,
         augment: bool = True,
         split_strategy: str = "spatial",
+        augmentation_preset: str = "baseline",
+        multi_axis: bool = False,
     ) -> None:
+        if augmentation_preset not in self._VALID_PRESETS:
+            msg = (
+                f"augmentation_preset must be one of {self._VALID_PRESETS}, "
+                f"got '{augmentation_preset}'"
+            )
+            raise ValueError(msg)
+
         self._crop_size = crop_size
-        self._augment = augment
+        self._augmentation_preset = augmentation_preset
+        # "none" preset disables augmentation entirely (same as augment=False)
+        self._augment = augment and augmentation_preset != "none"
 
         # Pre-load all slices into memory
         self._slices: list[tuple[np.ndarray, np.ndarray]] = list(
-            slicer.iter_slices(split, mapping, split_strategy=split_strategy)
+            slicer.iter_slices(
+                split, mapping,
+                split_strategy=split_strategy,
+                multi_axis=multi_axis,
+            )
         )
         logger.info(
-            "Loaded %d %s slices (crop_size=%d, augment=%s)",
+            "Loaded %d %s slices (crop_size=%d, augment=%s, multi_axis=%s)",
             len(self._slices),
             split,
             crop_size,
             augment,
+            multi_axis,
         )
 
     def __len__(self) -> int:
@@ -231,25 +249,32 @@ class BrainSegmentationDataset(Dataset):
     ) -> tuple[np.ndarray, np.ndarray]:
         """Apply random augmentations to image and mask.
 
-        Pipeline (each step independent, applied sequentially):
+        Which transforms are applied depends on ``augmentation_preset``:
+
+        - ``"baseline"``: flip, rotation ±15°, color jitter (Run 5 config)
+        - ``"extended"``: all 6 transforms including rot90, elastic, blur (Run 7)
+
+        Full pipeline (extended preset):
 
         1. Horizontal flip (50% probability)
-        2. Random 90° rotation (50% probability)
+        2. Random 90° rotation (50% probability) — extended only
         3. Rotation ±15° (skip if |angle| ≤ 0.5°)
-        4. Elastic deformation (30% probability)
-        5. Gaussian blur on image only (30% probability)
+        4. Elastic deformation (30% probability) — extended only
+        5. Gaussian blur on image only (30% probability) — extended only
         6. Color jitter on image only (always: brightness ±0.2, contrast ±0.2)
 
         Spatial transforms (1-4) use nearest-neighbor for mask, fill=0
         (Background class).
         """
+        extended = self._augmentation_preset == "extended"
+
         # 1. Horizontal flip
         if np.random.random() < 0.5:
             image = np.flip(image, axis=1).copy()
             mask = np.flip(mask, axis=1).copy()
 
-        # 2. Random 90° rotation
-        if np.random.random() < 0.5:
+        # 2. Random 90° rotation (extended only)
+        if extended and np.random.random() < 0.5:
             image, mask = self._random_rot90(image, mask)
 
         # 3. Rotation ±15°
@@ -264,12 +289,12 @@ class BrainSegmentationDataset(Dataset):
                 mask_pil.rotate(angle, resample=Image.NEAREST, fillcolor=0)
             ).astype(np.int64)
 
-        # 4. Elastic deformation
-        if np.random.random() < 0.3:
+        # 4. Elastic deformation (extended only)
+        if extended and np.random.random() < 0.3:
             image, mask = self._elastic_deform(image, mask)
 
-        # 5. Gaussian blur (image only)
-        if np.random.random() < 0.3:
+        # 5. Gaussian blur (image only, extended only)
+        if extended and np.random.random() < 0.3:
             image = self._gaussian_blur(image)
 
         # 6. Color jitter (image only, always applied)

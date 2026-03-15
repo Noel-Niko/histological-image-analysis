@@ -468,6 +468,96 @@ class TestRealAnnotationClassDistribution:
             "confirms spatial split root cause"
         )
 
+class TestPresentMapping:
+    """Test build_present_mapping() for class pruning (Step 12, Step 2)."""
+
+    def test_present_mapping_background_always_included(self, minimal_ontology_path):
+        """Background (class 0) should always be in the output mapping."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        present = {1, 2}
+        filtered = mapper.build_present_mapping(full, present)
+        assert 0 in set(filtered.values())
+
+    def test_present_mapping_contiguous_ids(self, minimal_ontology_path):
+        """Output class IDs should be contiguous starting from 0."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        present = {1, 3, 5}
+        filtered = mapper.build_present_mapping(full, present)
+        class_ids = sorted(set(filtered.values()))
+        # Should be [0, 1, 2, 3] — background + 3 present classes
+        assert class_ids == list(range(len(class_ids)))
+
+    def test_present_mapping_absent_classes_to_background(self, minimal_ontology_path):
+        """Structures whose full-mapping class is absent should map to 0."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        present = {1}
+        filtered = mapper.build_present_mapping(full, present)
+        for sid, cid in filtered.items():
+            if full[sid] != 1:
+                assert cid == 0, (
+                    f"Structure {sid} (full class {full[sid]}) should map to 0"
+                )
+
+    def test_present_mapping_deterministic(self, minimal_ontology_path):
+        """Same inputs should produce same outputs."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        present = {1, 2, 3}
+        m1 = mapper.build_present_mapping(full, present)
+        m2 = mapper.build_present_mapping(full, present)
+        assert m1 == m2
+
+    def test_present_mapping_empty_present_set(self, minimal_ontology_path):
+        """With no present classes, everything maps to background."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        filtered = mapper.build_present_mapping(full, set())
+        assert all(cid == 0 for cid in filtered.values())
+
+    def test_present_mapping_all_present(self, minimal_ontology_path):
+        """With all classes present, non-zero class count matches full mapping."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        all_classes = set(full.values()) - {0}
+        filtered = mapper.build_present_mapping(full, all_classes)
+        full_nonzero = len(set(v for v in full.values() if v > 0))
+        filtered_nonzero = len(set(v for v in filtered.values() if v > 0))
+        assert filtered_nonzero == full_nonzero
+
+    def test_present_mapping_num_labels(self, minimal_ontology_path):
+        """get_num_labels on filtered mapping should reflect reduced classes."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        present = {1, 3, 5}
+        filtered = mapper.build_present_mapping(full, present)
+        # 0 (background) + 3 present = 4 total labels
+        assert mapper.get_num_labels(filtered) == 4
+
+    def test_present_mapping_preserves_all_structure_ids(self, minimal_ontology_path):
+        """Every structure ID from full mapping should have an entry."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        present = {1, 5}
+        filtered = mapper.build_present_mapping(full, present)
+        assert set(filtered.keys()) == set(full.keys())
+
+    def test_present_mapping_class_names(self, minimal_ontology_path):
+        """get_class_names should work with filtered mapping."""
+        mapper = OntologyMapper(minimal_ontology_path)
+        full = mapper.build_full_mapping()
+        # Find which structure IDs map to class 1 and 2 in full mapping
+        sids_class_1 = [sid for sid, cid in full.items() if cid == 1]
+        sids_class_2 = [sid for sid, cid in full.items() if cid == 2]
+        present = {1, 2}
+        filtered = mapper.build_present_mapping(full, present)
+        names = mapper.get_class_names(filtered)
+        assert names[0] == "Background"
+        assert len(names) == mapper.get_num_labels(filtered)
+
+
 class TestGetClassNamesDepthMapping:
     """Test get_class_names() with depth and full mappings.
 

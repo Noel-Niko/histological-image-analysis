@@ -159,6 +159,41 @@ class OntologyMapper:
         sorted_ids = sorted(self.all_structure_ids)
         return {sid: i + 1 for i, sid in enumerate(sorted_ids)}
 
+    def build_present_mapping(
+        self,
+        full_mapping: dict[int, int],
+        present_class_ids: set[int],
+    ) -> dict[int, int]:
+        """Build a filtered mapping containing only classes with training pixels.
+
+        Takes the full mapping and a set of class IDs that have >0 training
+        pixels. Structures whose full-mapping class is NOT in the present set
+        are remapped to 0 (background). Present classes get contiguous new
+        IDs starting from 1.
+
+        Parameters
+        ----------
+        full_mapping : dict[int, int]
+            Complete structure ID → class ID mapping from ``build_full_mapping()``.
+        present_class_ids : set[int]
+            Set of class IDs (from the full mapping) that have training pixels.
+            Background (0) is always included implicitly.
+
+        Returns
+        -------
+        dict[int, int]
+            New mapping with contiguous class IDs for present classes only.
+        """
+        # Sort present class IDs (excluding background) for deterministic re-indexing
+        sorted_present = sorted(present_class_ids - {0})
+        old_to_new = {old_cid: i + 1 for i, old_cid in enumerate(sorted_present)}
+        old_to_new[0] = 0  # background stays at 0
+
+        return {
+            sid: old_to_new.get(full_mapping[sid], 0)
+            for sid in full_mapping
+        }
+
     def get_class_names(self, mapping: dict[int, int]) -> list[str]:
         """Return a list of class names indexed by class ID.
 

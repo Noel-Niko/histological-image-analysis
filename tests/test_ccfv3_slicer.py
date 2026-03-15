@@ -256,6 +256,159 @@ class TestInterleavedSplit:
         assert default == explicit
 
 
+class TestMultiAxisSlicing:
+    """Test multi-axis slicing (Step 12, Step 3)."""
+
+    def test_get_slice_axis0_coronal(self, mapper, synthetic_volume):
+        """Axis 0 (coronal) slice shape should be (DV, ML)."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        img, annot = slicer.get_slice(5, axis=0)
+        assert img.shape == (8, 12)
+        assert annot.shape == (8, 12)
+
+    def test_get_slice_axis1_axial(self, mapper, synthetic_volume):
+        """Axis 1 (axial) slice shape should be (AP, ML)."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        img, annot = slicer.get_slice(3, axis=1)
+        assert img.shape == (10, 12)
+        assert annot.shape == (10, 12)
+
+    def test_get_slice_axis2_sagittal(self, mapper, synthetic_volume):
+        """Axis 2 (sagittal) slice shape should be (AP, DV)."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        img, annot = slicer.get_slice(5, axis=2)
+        assert img.shape == (10, 8)
+        assert annot.shape == (10, 8)
+
+    def test_get_slice_default_axis_is_coronal(self, mapper, synthetic_volume):
+        """Default axis should be 0 (coronal), matching existing behavior."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        default = slicer.get_slice(5)
+        explicit = slicer.get_slice(5, axis=0)
+        assert np.array_equal(default[0], explicit[0])
+        assert np.array_equal(default[1], explicit[1])
+
+    def test_get_slice_invalid_axis_raises(self, mapper, synthetic_volume):
+        """Invalid axis should raise ValueError."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        with pytest.raises(ValueError, match="axis"):
+            slicer.get_slice(0, axis=3)
+
+    def test_get_slice_axis1_out_of_range_raises(self, mapper, synthetic_volume):
+        """Axial index out of range should raise IndexError."""
+        image, annotation = synthetic_volume  # shape (10, 8, 12)
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        with pytest.raises(IndexError):
+            slicer.get_slice(8, axis=1)  # DV dim is 8
+
+    def test_get_valid_indices_axis0(self, mapper):
+        """Valid coronal indices should work as before."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(10, 100, 100)
+        ).astype(np.float32)
+        annotation = np.zeros((10, 100, 100), dtype=np.uint32)
+        annotation[5:, 10:90, 10:90] = 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        valid = slicer._get_valid_indices(axis=0)
+        # Only slices 5-9 have significant brain tissue
+        assert all(i >= 5 for i in valid)
+        assert len(valid) == 5
+
+    def test_get_valid_indices_axis1(self, mapper):
+        """Valid axial indices should respect 10% threshold."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(10, 8, 12)
+        ).astype(np.float32)
+        annotation = np.zeros((10, 8, 12), dtype=np.uint32)
+        # Fill DV rows 3-7 with brain tissue across full AP and ML range
+        annotation[:, 3:8, :] = 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        valid = slicer._get_valid_indices(axis=1)
+        # DV indices 3-7 should have brain tissue
+        assert all(i >= 3 for i in valid)
+        assert len(valid) >= 5
+
+    def test_get_valid_indices_axis2(self, mapper):
+        """Valid sagittal indices should respect 10% threshold."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(10, 8, 12)
+        ).astype(np.float32)
+        annotation = np.zeros((10, 8, 12), dtype=np.uint32)
+        # Fill ML columns 2-10 with brain tissue
+        annotation[:, :, 2:11] = 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        valid = slicer._get_valid_indices(axis=2)
+        assert all(2 <= i <= 10 for i in valid)
+        assert len(valid) >= 9
+
+    def test_get_valid_indices_backward_compat(self, mapper, synthetic_volume):
+        """_get_valid_indices(axis=0) should match _get_valid_ap_indices()."""
+        image, annotation = synthetic_volume
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        ap_valid = slicer._get_valid_ap_indices()
+        axis0_valid = slicer._get_valid_indices(axis=0)
+        assert ap_valid == axis0_valid
+
+    def test_iter_slices_multi_axis_train_more_samples(self, mapper):
+        """Multi-axis training should yield more slices than coronal only."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(20, 16, 24)
+        ).astype(np.float32)
+        annotation = np.ones((20, 16, 24), dtype=np.uint32) * 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        mapping = mapper.build_coarse_mapping()
+
+        coronal_only = list(slicer.iter_slices(
+            "train", mapping, split_strategy="interleaved",
+        ))
+        multi_axis = list(slicer.iter_slices(
+            "train", mapping, split_strategy="interleaved", multi_axis=True,
+        ))
+        assert len(multi_axis) > len(coronal_only)
+
+    def test_iter_slices_multi_axis_val_coronal_only(self, mapper):
+        """Multi-axis val should be identical to coronal-only val."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(20, 16, 24)
+        ).astype(np.float32)
+        annotation = np.ones((20, 16, 24), dtype=np.uint32) * 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        mapping = mapper.build_coarse_mapping()
+
+        coronal_val = list(slicer.iter_slices(
+            "val", mapping, split_strategy="interleaved",
+        ))
+        multi_val = list(slicer.iter_slices(
+            "val", mapping, split_strategy="interleaved", multi_axis=True,
+        ))
+        assert len(multi_val) == len(coronal_val)
+        for (img1, mask1), (img2, mask2) in zip(coronal_val, multi_val):
+            assert np.array_equal(img1, img2)
+            assert np.array_equal(mask1, mask2)
+
+    def test_iter_slices_multi_axis_yields_valid_shapes(self, mapper):
+        """All multi-axis slices should be valid 2D images."""
+        image = np.random.default_rng(42).uniform(
+            0, 100, size=(20, 16, 24)
+        ).astype(np.float32)
+        annotation = np.ones((20, 16, 24), dtype=np.uint32) * 567
+        slicer = CCFv3Slicer.from_arrays(image, annotation, mapper)
+        mapping = mapper.build_coarse_mapping()
+
+        for img, mask in slicer.iter_slices(
+            "train", mapping, split_strategy="interleaved", multi_axis=True,
+        ):
+            assert img.ndim == 2
+            assert mask.ndim == 2
+            assert img.shape == mask.shape
+            assert img.dtype == np.uint8
+
+
 class TestIterSlices:
     """Test iteration over slices with remapping."""
 

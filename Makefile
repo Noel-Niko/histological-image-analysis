@@ -19,8 +19,14 @@ NOTEBOOK_WEIGHTED_SRC  := notebooks/finetune_weighted_loss.ipynb
 NOTEBOOK_WEIGHTED_DEST := $(WORKSPACE_BASE)/notebooks/finetune_weighted_loss
 NOTEBOOK_AUGMENTED_SRC  := notebooks/finetune_augmented.ipynb
 NOTEBOOK_AUGMENTED_DEST := $(WORKSPACE_BASE)/notebooks/finetune_augmented
+NOTEBOOK_TTA_SRC        := notebooks/eval_tta.ipynb
+NOTEBOOK_TTA_DEST       := $(WORKSPACE_BASE)/notebooks/eval_tta
+NOTEBOOK_PRUNED_MA_SRC  := notebooks/finetune_pruned_multiaxis.ipynb
+NOTEBOOK_PRUNED_MA_DEST := $(WORKSPACE_BASE)/notebooks/finetune_pruned_multiaxis
+NOTEBOOK_ABLATION_SRC   := notebooks/finetune_pruned_ablation.ipynb
+NOTEBOOK_ABLATION_DEST  := $(WORKSPACE_BASE)/notebooks/finetune_pruned_ablation
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy validate help
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy validate help
 
 # ── Local Development ──────────────────────────────────────────────────
 
@@ -101,7 +107,34 @@ deploy-notebook-augmented: ## Upload augmented training notebook to workspace
 		--profile $(DATABRICKS_PROFILE)
 	@echo "Notebook uploaded to $(NOTEBOOK_AUGMENTED_DEST)"
 
-deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented ## Full deployment (wheel + all notebooks)
+deploy-notebook-eval-tta: ## Upload TTA evaluation notebook to workspace
+	databricks workspace mkdirs $(dir $(NOTEBOOK_TTA_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_TTA_DEST) \
+		--file $(NOTEBOOK_TTA_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_TTA_DEST)"
+
+deploy-notebook-pruned-multiaxis: ## Upload pruned+multi-axis training notebook (Run 8)
+	databricks workspace mkdirs $(dir $(NOTEBOOK_PRUNED_MA_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_PRUNED_MA_DEST) \
+		--file $(NOTEBOOK_PRUNED_MA_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_PRUNED_MA_DEST)"
+
+deploy-notebook-pruned-ablation: ## Upload pruned ablation notebook (Run 8a/8b with diagnostics)
+	databricks workspace mkdirs $(dir $(NOTEBOOK_ABLATION_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_ABLATION_DEST) \
+		--file $(NOTEBOOK_ABLATION_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_ABLATION_DEST)"
+
+deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation ## Full deployment (wheel + all notebooks)
 	@echo ""
 	@echo "=== Deployment complete ==="
 	@echo ""
@@ -112,6 +145,9 @@ deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full
 	@echo "  - Full (1,328 classes, unfrozen): $(NOTEBOOK_UNFROZEN_DEST)"
 	@echo "  - Full (weighted Dice+CE loss):   $(NOTEBOOK_WEIGHTED_DEST)"
 	@echo "  - Full (extended augmentation):   $(NOTEBOOK_AUGMENTED_DEST)"
+	@echo "  - TTA evaluation (Run 5):         $(NOTEBOOK_TTA_DEST)"
+	@echo "  - Pruned + multi-axis (Run 8):    $(NOTEBOOK_PRUNED_MA_DEST)"
+	@echo "  - Pruned ablation (Run 8a/8b):    $(NOTEBOOK_ABLATION_DEST)"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Open a notebook on Databricks"

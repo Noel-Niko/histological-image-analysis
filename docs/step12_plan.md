@@ -47,6 +47,30 @@ The DINOv2-Large + UperNet model peaked at **68.8% mIoU** (Run 5, unfrozen backb
 |------|--------|
 | `notebooks/eval_tta.ipynb` or `scripts/eval_tta.py` | **Create** — TTA evaluation |
 
+### Step 0 Results (2026-03-15)
+
+**NEGATIVE RESULT — TTA with rotational variants catastrophically degrades performance.**
+
+| Metric | Baseline | TTA (6 variants) | Delta |
+|--------|----------|-------------------|-------|
+| mIoU | 68.44% | 44.39% | **−24.05%** |
+| Accuracy | 92.12% | 84.35% | −7.77% |
+| Valid classes | 504 | 504 | — |
+
+- **482/504 classes regressed**, only 8 improved, 14 unchanged
+- Median per-class delta: −18.24%
+- Worst regressions: structures with strong directional priors lost 70-80% IoU (e.g., ventral tegmental decussation: 79.5% → 0.0%)
+- Baseline (68.44%) closely matches documented Run 5 mIoU (68.8%) — small difference from center-crop determinism
+
+**Root cause:** The model was trained with flip + rot15° + jitter (Run 5 config). It has **never seen 90°/180°/270° rotated brain slices**. Brain coronal sections have strong directional priors (dorsal-ventral axis, medial-lateral organization) that are destroyed by rot90. The TTA effective budget: 33% correct (original ×2), 17% plausible (hflip), **50% noise** (rot90 k=1,2,3). The noise overwhelms the signal.
+
+**Implications:**
+1. **Rotational equivariance does not hold** for this model + data combination. Brain anatomy is bilaterally symmetric (left-right) but NOT rotationally symmetric.
+2. **Reinforces Run 7 failure:** Extended augmentation (which included rot90) regressed by −6.5% during training. TTA confirms the model fundamentally cannot handle rotated brain slices.
+3. **Hflip-only TTA** might yield a small gain (+0.1-0.5%) but was not isolated in this experiment. Not worth pursuing — the gain is marginal.
+4. **Multi-axis slicing (Step 3) is different:** Sagittal/axial slices are genuinely different spatial patterns with their own directional priors, not rotations of coronal views. The model needs to learn these during training.
+5. **The original estimate of +1-3% was wrong.** TTA only helps when the model is approximately equivariant to the augmentations used. Run 5 is not rot90-equivariant.
+
 ---
 
 ## Step 1: Revert Augmentation to Run 5 Defaults
@@ -269,11 +293,11 @@ Axial slices are 1320×1140 — a 518×518 crop covers ~18% of area vs ~29% for 
 |------|------|--------|
 | — | Consolidate experimental results from notebooks | DONE — `docs/experimental_results.md` |
 | — | Fix Run 5 accuracy error (89.4% → 92.5%) | DONE — corrected in all .md files |
-| 0 | TTA on Run 5 model | PENDING |
-| 1 | Revert augmentation (add `augmentation_preset`) | PENDING |
-| 2 | Prune output head (~671 classes) | PENDING |
-| 3 | Multi-axis slicing (train only, coronal val) | PENDING |
-| 4 | Run 8 notebook + deploy | PENDING |
+| 0 | TTA on Run 5 model | DONE — **NEGATIVE RESULT**: 6-variant TTA regressed from 68.4% to 44.4% mIoU (−24%). rot90 variants are noise. |
+| 1 | Revert augmentation (add `augmentation_preset`) | DONE — 6 tests, baseline/extended/none presets |
+| 2 | Prune output head (~671 classes) | DONE — `build_present_mapping()`, 9 tests |
+| 3 | Multi-axis slicing (train only, coronal val) | DONE — `get_slice(axis)`, `_get_valid_indices(axis)`, `multi_axis` flag, 14 tests |
+| 4 | Run 8 notebook + deploy | DONE — Two notebooks: `finetune_pruned_multiaxis.ipynb` (combined) + `finetune_pruned_ablation.ipynb` (ablation with diagnostics, `ENABLE_MULTI_AXIS` flag) |
 | 5 | Focal loss sweep (conditional) | PENDING |
 | 6 | Sliding window eval | PENDING |
 | 7 | Write-up / paper | PENDING |

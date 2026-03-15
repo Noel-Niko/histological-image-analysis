@@ -181,13 +181,17 @@ class CCFv3Slicer:
         """Number of coronal slices (AP axis length)."""
         return self.image_volume.shape[0]
 
-    def get_slice(self, ap_index: int) -> tuple[np.ndarray, np.ndarray]:
-        """Get a single coronal slice at the given AP index.
+    def get_slice(
+        self, index: int, axis: int = 0
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Get a single 2D slice along the specified axis.
 
         Parameters
         ----------
-        ap_index : int
-            Position along the anterior-posterior axis.
+        index : int
+            Position along the slicing axis.
+        axis : int
+            Slicing axis: 0=coronal (AP), 1=axial (DV), 2=sagittal (ML).
 
         Returns
         -------
@@ -196,35 +200,64 @@ class CCFv3Slicer:
 
         Raises
         ------
+        ValueError
+            If axis is not 0, 1, or 2.
         IndexError
-            If ap_index is out of range.
+            If index is out of range for the given axis.
         """
-        if ap_index < 0 or ap_index >= self.num_slices:
+        if axis not in (0, 1, 2):
+            msg = f"axis must be 0, 1, or 2, got {axis}"
+            raise ValueError(msg)
+
+        dim_size = self.image_volume.shape[axis]
+        if index < 0 or index >= dim_size:
             raise IndexError(
-                f"AP index {ap_index} out of range [0, {self.num_slices})"
+                f"Index {index} out of range [0, {dim_size}) for axis {axis}"
             )
+
+        slicing = [slice(None)] * 3
+        slicing[axis] = index
         return (
-            self.image_volume[ap_index, :, :],
-            self.annotation_volume[ap_index, :, :],
+            self.image_volume[tuple(slicing)],
+            self.annotation_volume[tuple(slicing)],
         )
 
     def _get_valid_ap_indices(self) -> list[int]:
         """Find AP indices where at least MIN_BRAIN_FRACTION pixels are brain."""
-        valid = []
-        total_pixels = (
-            self.annotation_volume.shape[1] * self.annotation_volume.shape[2]
-        )
+        return self._get_valid_indices(axis=0)
+
+    def _get_valid_indices(self, axis: int = 0) -> list[int]:
+        """Find indices along axis where at least MIN_BRAIN_FRACTION pixels are brain.
+
+        Parameters
+        ----------
+        axis : int
+            Slicing axis: 0=coronal (AP), 1=axial (DV), 2=sagittal (ML).
+        """
+        vol = self.annotation_volume
+        dim_size = vol.shape[axis]
+
+        # Total pixels in a slice perpendicular to the given axis
+        other_dims = [s for i, s in enumerate(vol.shape) if i != axis]
+        total_pixels = other_dims[0] * other_dims[1]
         threshold = total_pixels * MIN_BRAIN_FRACTION
 
-        for ap in range(self.num_slices):
-            brain_pixels = np.count_nonzero(self.annotation_volume[ap, :, :])
+        valid = []
+        slicing = [slice(None)] * 3
+        for idx in range(dim_size):
+            slicing[axis] = idx
+            brain_pixels = np.count_nonzero(vol[tuple(slicing)])
             if brain_pixels >= threshold:
-                valid.append(ap)
+                valid.append(idx)
+            slicing[axis] = slice(None)  # reset for next iteration
 
+        axis_names = {0: "coronal", 1: "axial", 2: "sagittal"}
         logger.info(
-            "Valid slices: %d / %d (%.1f%% brain threshold)",
+            "Valid %s slices (axis %d): %d / %d (%.1f%% brain threshold)",
+            axis_names.get(axis, str(axis)),
+            axis,
             len(valid),
-            self.num_slices,
+            dim_size,
             MIN_BRAIN_FRACTION * 100,
         )
         return valid
@@ -312,6 +345,7 @@ class CCFv3Slicer:
         split: str,
         mapping: dict[int, int],
         split_strategy: str = "spatial",
+        multi_axis: bool = False,
     ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         """Iterate over slices in a split, with remapped class masks.
 
@@ -323,16 +357,38 @@ class CCFv3Slicer:
             Structure ID → class ID mapping from OntologyMapper.
         split_strategy : str
             Split strategy passed to get_split_indices().
+        multi_axis : bool
+            If True and split is "train", additionally yield axial (axis 1)
+            and sagittal (axis 2) slices. Val/test remain coronal-only to
+            maintain comparability with single-axis experiments.
 
         Yields
         ------
         tuple of (image_2d, class_mask_2d)
-            Image is uint8 (DV, ML), class mask is int64 (DV, ML).
+            Image is uint8, class mask is int64.
         """
         splits = self.get_split_indices(split_strategy=split_strategy)
         indices = splits[split]
 
+        # Coronal slices (all splits)
         for ap in indices:
-            img, annot = self.get_slice(ap)
+            img, annot = self.get_slice(ap, axis=0)
             class_mask = self._ontology_mapper.remap_mask(annot, mapping)
             yield img, class_mask
+
+        # Multi-axis: add axial and sagittal slices for training only
+        if multi_axis and split == "train":
+            for axis in (1, 2):
+                axis_names = {1: "axial", 2: "sagittal"}
+                valid = self._get_valid_indices(axis=axis)
+                logger.info(
+                    "Adding %d %s slices to training",
+                    len(valid),
+                    axis_names[axis],
+                )
+                for idx in valid:
+                    img, annot = self.get_slice(idx, axis=axis)
+                    class_mask = self._ontology_mapper.remap_mask(
+                        annot, mapping,
+                    )
+                    yield img, class_mask

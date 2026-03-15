@@ -24,6 +24,40 @@ All runs on NVIDIA L40S 48 GB, single GPU, Databricks 17.3 LTS. Model: DINOv2-La
 
 ---
 
+## Test-Time Augmentation (TTA) — Eval-Only Experiment (2026-03-15)
+
+**NEGATIVE RESULT.** 6-variant TTA on Run 5 model catastrophically degraded performance.
+
+| Metric | Baseline (1 pass) | TTA (6 variants) | Delta |
+|--------|-------------------|-------------------|-------|
+| mIoU | 68.44% | 44.39% | **−24.05%** |
+| Accuracy | 92.12% | 84.35% | −7.77% |
+| Valid classes | 504 | 504 | — |
+
+**TTA strategy:** Average logits from 6 variants: original, horizontal flip, rot90 k=0,1,2,3. fp16 inference on GPU, fp32 accumulation on CPU.
+
+**Per-class impact:** 482/504 classes regressed, 8 improved, 14 unchanged. Mean delta: −24.05%, median: −18.24%, std: 20.91%.
+
+**Top improvements (rare):**
+| Class | Name | Baseline | TTA | Delta |
+|-------|------|----------|-----|-------|
+| 261 | Posterolateral visual area, layer 2/3 | 5.4% | 43.5% | +38.1% |
+| 892 | Posterolateral visual area, layer 5 | 7.9% | 22.8% | +14.9% |
+| 1059 | Primary somatosensory area, barrel field, layer 5 | 41.9% | 54.8% | +13.0% |
+
+**Worst regressions:**
+| Class | Name | Baseline | TTA | Delta |
+|-------|------|----------|-----|-------|
+| 387 | ventral tegmental decussation | 79.5% | 0.0% | −79.5% |
+| 190 | Rostral linear nucleus raphe | 78.6% | 0.4% | −78.2% |
+| 581 | Central linear nucleus raphe | 86.2% | 8.4% | −77.8% |
+
+**Root cause:** The model was trained with only flip + rot15° + jitter. rot90 variants produce images the model has never seen. Brain coronal sections have strong directional priors (dorsal-ventral, medial-lateral) that are destroyed by 90° rotation. Effective TTA budget: 33% correct signal (original ×2), 17% plausible (hflip), 50% noise (rot90 k=1,2,3).
+
+**Key insight:** Reinforces Run 7's −6.5% regression with rot90 augmentation during training. The model fundamentally lacks rotational equivariance beyond small angles.
+
+---
+
 ## Hyperparameter Comparison
 
 | Parameter | Runs 1-2 (Coarse) | Run 3 (Depth-2) | Run 4 (Full) | Runs 5,7 (Unfrozen) | Run 6 (Weighted) |
