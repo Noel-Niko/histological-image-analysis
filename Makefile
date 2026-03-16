@@ -25,8 +25,10 @@ NOTEBOOK_PRUNED_MA_SRC  := notebooks/finetune_pruned_multiaxis.ipynb
 NOTEBOOK_PRUNED_MA_DEST := $(WORKSPACE_BASE)/notebooks/finetune_pruned_multiaxis
 NOTEBOOK_ABLATION_SRC   := notebooks/finetune_pruned_ablation.ipynb
 NOTEBOOK_ABLATION_DEST  := $(WORKSPACE_BASE)/notebooks/finetune_pruned_ablation
+NOTEBOOK_FINAL_SRC      := notebooks/finetune_final_200ep.ipynb
+NOTEBOOK_FINAL_DEST     := $(WORKSPACE_BASE)/notebooks/finetune_final_200ep
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy validate help
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy deploy-human-annotations validate help
 
 # ── Local Development ──────────────────────────────────────────────────
 
@@ -134,7 +136,60 @@ deploy-notebook-pruned-ablation: ## Upload pruned ablation notebook (Run 8a/8b w
 		--profile $(DATABRICKS_PROFILE)
 	@echo "Notebook uploaded to $(NOTEBOOK_ABLATION_DEST)"
 
-deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation ## Full deployment (wheel + all notebooks)
+deploy-notebook-final: ## Upload final 200-epoch training notebook (Run 9)
+	databricks workspace mkdirs $(dir $(NOTEBOOK_FINAL_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_FINAL_DEST) \
+		--file $(NOTEBOOK_FINAL_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_FINAL_DEST)"
+
+deploy-human-annotations: ## Upload human annotation data to Databricks workspace
+	@echo "=== Uploading human annotation data ==="
+	@echo ""
+	@echo "--- Human SVG annotations (4,463 files) ---"
+	databricks workspace mkdirs $(WORKSPACE_BASE)/human_atlas/svgs --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import-dir data/allen_brain_data/human_atlas/svgs/ \
+		$(WORKSPACE_BASE)/human_atlas/svgs/ \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo ""
+	@echo "--- Human ontologies ---"
+	databricks workspace mkdirs $(WORKSPACE_BASE)/ontology --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(WORKSPACE_BASE)/ontology/structure_graph_10.json \
+		--file data/allen_brain_data/ontology/structure_graph_10.json \
+		--format AUTO --overwrite --profile $(DATABRICKS_PROFILE)
+	databricks workspace import $(WORKSPACE_BASE)/ontology/structure_graph_16.json \
+		--file data/allen_brain_data/ontology/structure_graph_16.json \
+		--format AUTO --overwrite --profile $(DATABRICKS_PROFILE)
+	@echo ""
+	@echo "--- Developing human atlas (169 images + SVGs) ---"
+	databricks workspace mkdirs $(WORKSPACE_BASE)/developing_human_atlas --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import-dir data/allen_brain_data/developing_human_atlas/ \
+		$(WORKSPACE_BASE)/developing_human_atlas/ \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	databricks workspace import $(WORKSPACE_BASE)/metadata/developing_human_atlas_metadata.json \
+		--file data/allen_brain_data/metadata/developing_human_atlas_metadata.json \
+		--format AUTO --overwrite --profile $(DATABRICKS_PROFILE)
+	@echo ""
+	@echo "--- BigBrain volumes ---"
+	databricks workspace mkdirs $(WORKSPACE_BASE)/bigbrain --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import-dir data/bigbrain/ \
+		$(WORKSPACE_BASE)/bigbrain/ \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo ""
+	@echo "=== Human annotation upload complete ==="
+	@echo "Uploaded to: $(WORKSPACE_BASE)"
+	@echo "  - human_atlas/svgs/          (4,463 SVG annotations)"
+	@echo "  - ontology/structure_graph_10.json (human adult, 1,839 structures)"
+	@echo "  - ontology/structure_graph_16.json (developing human, 3,317 structures)"
+	@echo "  - developing_human_atlas/    (169 images + 169 SVGs)"
+	@echo "  - bigbrain/                  (NIfTI volumes + layer segmentation)"
+
+deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final ## Full deployment (wheel + all notebooks)
 	@echo ""
 	@echo "=== Deployment complete ==="
 	@echo ""
@@ -148,6 +203,7 @@ deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full
 	@echo "  - TTA evaluation (Run 5):         $(NOTEBOOK_TTA_DEST)"
 	@echo "  - Pruned + multi-axis (Run 8):    $(NOTEBOOK_PRUNED_MA_DEST)"
 	@echo "  - Pruned ablation (Run 8a/8b):    $(NOTEBOOK_ABLATION_DEST)"
+	@echo "  - Final 200-epoch (Run 9):        $(NOTEBOOK_FINAL_DEST)"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Open a notebook on Databricks"
