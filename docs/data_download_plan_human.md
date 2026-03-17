@@ -126,7 +126,7 @@ ISOCORTEX           = f"{WS_ROOT}/bigbrain/siibra/isocortex_bigbrain.nii.gz"
 
 ### Step 1: Extend download script for human SVGs
 
-- **Status:** IN PROGRESS
+- **Status:** DONE — 4,463/4,463 SVGs (541.8 MB), 524+ unique structure IDs, 96% have annotations
 - **File:** Created `scripts/download_human_annotations.py`
 - **Details:**
   1. Load existing `human_atlas_images_metadata.json`
@@ -188,7 +188,7 @@ ISOCORTEX           = f"{WS_ROOT}/bigbrain/siibra/isocortex_bigbrain.nii.gz"
 
 ### Step 5: Verify all downloads
 
-- **Status:** NOT STARTED
+- **Status:** DONE — All NIfTI volumes verified (nibabel), all SVGs contain structure_id, all JSON parseable
 - **Details:**
   - Validate SVG files contain `structure_id` attributes
   - Validate NIfTI files load with `nibabel`
@@ -217,7 +217,7 @@ ISOCORTEX           = f"{WS_ROOT}/bigbrain/siibra/isocortex_bigbrain.nii.gz"
 
 ### Step 8: Upload to Databricks
 
-- **Status:** NOT STARTED
+- **Status:** DONE — `make deploy-human-annotations` uploaded all data to workspace
 - **Details:**
   - All files <500 MB → workspace upload:
     ```bash
@@ -253,10 +253,10 @@ ISOCORTEX           = f"{WS_ROOT}/bigbrain/siibra/isocortex_bigbrain.nii.gz"
 
 ### Step 10: Add Makefile targets
 
-- **Status:** NOT STARTED
+- **Status:** DONE — `deploy-human-annotations` target added to Makefile
 - **Details:**
-  - Add `deploy-human-annotations` target for uploading human annotation data
-  - Add notebook deployment target for human training notebook
+  - Added `deploy-human-annotations` target for uploading human annotation data
+  - Add notebook deployment target for human training notebook (pending — no human notebook yet)
 
 ---
 
@@ -271,8 +271,10 @@ _Updated as steps are completed._
 | 2026-03-16 08:06 | Step 4: BigBrain FTP (main volumes) | DONE | classified_volume (16 MB), histological_volume (74 MB), hippocampus L+R (3.5 MB), LICENSE |
 | 2026-03-16 08:12 | Step 4: BigBrain FTP (layer seg) | DONE | 13 sections, 78 files, 390.9 MB (includes raw + geo + classified layers) |
 | 2026-03-16 08:12 | Step 4b: siibra volumes | DONE | julich_brain_v29 (1.9 MB), cortical_layers (8.1 MB), isocortex (3.4 MB) |
-| 2026-03-16 08:12 | Step 1: Human SVGs | IN PROGRESS | 4,463 annotated images, downloading via scripts/download_human_annotations.py |
+| 2026-03-16 10:31 | Step 1: Human SVGs | DONE | 4,463/4,463 downloaded (1 retry), 541.8 MB, 524+ unique structure IDs |
 | 2026-03-16 08:52 | Step 3: Developing atlas | DONE | 169 images + 169 SVGs, 0 errors |
+| 2026-03-16 10:32 | Step 5: Verification | DONE | All NIfTI volumes verified, SVGs contain structure_id, JSONs parseable |
+| 2026-03-16 10:35 | Step 8: Databricks upload | DONE | `make deploy-human-annotations` — all data uploaded to workspace |
 
 ---
 

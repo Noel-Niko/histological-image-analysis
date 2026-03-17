@@ -283,12 +283,17 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
     - **Steps 5-7:** PENDING (focal loss, sliding window eval, write-up/paper).
     - **Steps 8-10 (human model):** PENDING — separate human brain segmentation model. Strategy: finish mouse optimization first, then build a dedicated human model using lessons learned (architecture, hyperparams, augmentation regime, optionally mouse checkpoint as initialization). Human model trained exclusively on human data. Blocker: no human ground truth annotations confirmed yet — Step 8 investigates Allen API for human SVGs and surveys external sources (BigBrain, Jülich).
     - **Test suite:** 211/211 pass (was 181).
-15. **Human data status:**
-    - **Downloaded:** 14,565 human Nissl images (17 GB, 6 donors) from Allen Human Brain Atlas
-    - **Uploaded:** All images on Databricks Workspace
-    - **Ground truth annotations:** NOT AVAILABLE from Allen (no SVGs, no pixel-level masks, no 3D reference volume for human)
-    - **Uninvestigated lead:** Allen Human Brain Atlas web viewer shows structure delineations on reference plates. Never tested `svg_download` for human AtlasImage IDs — only downloaded SectionImage (raw donor data). Needs API probe.
-    - **External sources to investigate:** BigBrain (20μm 3D histological model), Jülich Cytoarchitectonic Atlas (probabilistic maps)
+15. **Human data status — DOWNLOAD + UPLOAD COMPLETE (2026-03-16):**
+    - See `docs/data_download_plan_human.md` for full details.
+    - See `docs/human_data_search_results.md` for search findings.
+    - **Allen Human SectionImage SVGs:** 4,463 files (541.8 MB), 524+ unique structure IDs mapping to Graph 10 ontology (1,839 structures). 96% of SVGs contain actual annotations. 6 donors.
+    - **Allen Developing Human Atlas (21 pcw):** 169 images + 169 SVGs, atlas ID 3. 156/169 SVGs have structure annotations (92%). Uses Graph 16 ontology (3,317 structures).
+    - **Human Ontologies:** Graph 10 (adult, 1,839 structures, 844 KB), Graph 16 (developing, 3,317 structures, 1.8 MB).
+    - **BigBrain volumes:** 9-class tissue classification (16 MB, 200μm), histological intensity 8-bit (74 MB, 200μm), hippocampus L+R (3.5 MB, 400μm), layer segmentation (391 MB, 13 sections × 6 files each).
+    - **siibra volumes (BigBrain space):** Julich-Brain v2.9 (122 regions, 2% voxel coverage, 1.9 MB), cortical layers (6 layers, 38.4% coverage, 8.1 MB), isocortex segmentation (binary cortex/subcortex, 25.8% coverage, 3.4 MB).
+    - **All uploaded to Databricks Workspace** via `make deploy-human-annotations`.
+    - **Download script:** `scripts/download_human_annotations.py` (idempotent, re-runnable).
+    - **Allen adult AtlasImage SVGs are ALL EMPTY** — only SectionImage SVGs and developing atlas SVGs have actual annotations.
     - **Design decision:** Two clean, separate models — mouse-only and human-only. Human model free to use any mouse learnings (architecture, hyperparams, weight initialization) but trained exclusively on human data.
 16. **Future steps** — after Step 12:
     - DINOv2-Giant: only after above exhausted (see `docs/dinov2_model_research.md`)

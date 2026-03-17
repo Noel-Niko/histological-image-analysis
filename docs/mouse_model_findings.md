@@ -11,7 +11,7 @@
 ### Critical Success Factors ✓
 
 1. **Backbone unfreezing is essential** — Frozen backbone: 60.3% mIoU. Unfrozen (last 4 of 24 blocks): 68.8% mIoU (+8.5%). This is the single largest improvement.
-2. **Simple augmentation is sufficient** — Baseline (flip + rot15° + jitter) works. Extended augmentation (rot90, elastic, blur) hurts (−6.5%).
+2. **Simple augmentation is suffi1cient** — Baseline (flip + rot15° + jitter) works. Extended augmentation (rot90, elastic, blur) hurts (−6.5%).
 3. **Cross-entropy loss is optimal** — Weighted Dice+CE underperforms plain CE (−1.6%).
 4. **Interleaved train/val/test split** — Spatial split causes distribution shift (50.7% → 88.0% mIoU switch).
 5. **100+ epochs needed** — Val loss still declining at epoch 100 for all unfrozen runs.
