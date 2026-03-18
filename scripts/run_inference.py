@@ -20,8 +20,11 @@ Usage:
     python scripts/run_inference.py --image image.jpg --model ./models/custom-model --output results/
 
 Requirements:
-    - Model downloaded to ./models/dinov2-upernet-unfrozen/
+    - Model downloaded to ./models/dinov2-upernet-final/
     - See docs/model_download_guide.md for download instructions
+
+    # Sliding window (full-resolution tiled inference)
+    python scripts/run_inference.py --image image.jpg --output results/ --sliding-window
 
 Compute Requirements:
     ✓ CAN RUN ON LAPTOP (CPU or GPU)
@@ -64,7 +67,7 @@ def load_model(
     if not os.path.exists(model_path):
         print(f"ERROR: Model not found at {model_path}")
         print(f"\nPlease download the model first:")
-        print(f"  databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/unfrozen {model_path}")
+        print(f"  databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/final-200ep {model_path}")
         print(f"\nOr see: docs/model_download_guide.md")
         sys.exit(1)
 
@@ -275,11 +278,21 @@ For more information, see: docs/model_download_guide.md
         "--model",
         "-m",
         type=str,
-        default="./models/dinov2-upernet-unfrozen",
-        help="Path to model directory (default: ./models/dinov2-upernet-unfrozen)",
+        default="./models/dinov2-upernet-final",
+        help="Path to model directory (default: ./models/dinov2-upernet-final)",
     )
     parser.add_argument(
         "--cpu", action="store_true", help="Force CPU inference (no GPU)"
+    )
+    parser.add_argument(
+        "--sliding-window", action="store_true",
+        help="Use sliding window inference for full-resolution tiled prediction "
+             "(518x518 tiles, stride 259, 50%% overlap). Slower but captures "
+             "structures at image edges that center-crop misses.",
+    )
+    parser.add_argument(
+        "--stride", type=int, default=259,
+        help="Stride for sliding window inference (default: 259, i.e. 50%% overlap)",
     )
 
     args = parser.parse_args()

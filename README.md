@@ -59,8 +59,9 @@ The pipeline supports three mapping granularities, with notebooks for frozen and
 | **Depth-2** | 19 | `finetune_depth2.ipynb` | Frozen | `/dbfs/.../models/depth2` |
 | **Full** | 1,328 | `finetune_full.ipynb` | Frozen | `/dbfs/.../models/full` |
 | **Full (unfrozen)** | 1,328 | `finetune_unfrozen.ipynb` | Last 4 blocks unfrozen | `/dbfs/.../models/unfrozen` |
+| **Final (200ep)** | 1,328 | `finetune_final_200ep.ipynb` | Last 4 blocks unfrozen | `/dbfs/.../models/final-200ep` |
 
-All notebooks use the same pipeline code (`ontology.py`, `ccfv3_slicer.py`, `dataset.py`, `training.py`). The unfrozen notebook adds differential learning rate (backbone 1e-5, head 1e-4) and trains for 100 epochs with early stopping.
+All notebooks use the same pipeline code (`ontology.py`, `ccfv3_slicer.py`, `dataset.py`, `training.py`). The final model uses differential learning rate (backbone 1e-5, head 1e-4) and trains for 200 epochs. See `docs/paper_draft.md` for the full ablation study.
 
 ## Databricks Deployment
 
@@ -113,21 +114,32 @@ for details. Single-GPU runs with `batch_size=4` have been verified to work with
 
 ## Training Results
 
-| Run | Granularity | Split | mIoU | Overall Acc | Runtime | Cluster |
-|-----|-------------|-------|------|-------------|---------|---------|
-| 1 | Coarse 6-class | spatial | 50.7% | 78.8% | 23 min | 1x L40S |
-| 2 | Coarse 6-class | interleaved | **88.0%** | **95.8%** | 23 min | 1x L40S |
-| 3 | Depth-2 19-class | interleaved | **69.6%** | **95.5%** | 25 min | 1x L40S |
-| 4 | Full 1,328-class (frozen) | interleaved | **60.3%** | **88.9%** | 5.5 hrs | 1x L40S |
-| 5 | Full 1,328-class (unfrozen) | interleaved | **68.8%** | — | 11.3 hrs | 1x L40S |
+| Run | Config | mIoU (CC) | mIoU (SW) | Accuracy | Runtime | Cluster |
+|-----|--------|-----------|-----------|----------|---------|---------|
+| 1 | Coarse 6-class, spatial split | 50.7% | — | 78.8% | 23 min | 1x L40S |
+| 2 | Coarse 6-class, interleaved | 88.0% | — | 95.8% | 23 min | 1x L40S |
+| 3 | Depth-2 19-class | 69.6% | — | 95.5% | 25 min | 1x L40S |
+| 4 | Full 1,328-class (frozen) | 60.3% | — | 88.9% | 5.5 hrs | 1x L40S |
+| 5 | Full 1,328-class (unfrozen) | 68.8% | — | 92.5% | 11.3 hrs | 1x L40S |
+| 6 | Weighted Dice+CE loss | 67.2% | — | 89.7% | ~33 hrs | 1x L40S |
+| 7 | Extended augmentation | 62.3% | — | 90.1% | ~12 hrs | 1x L40S |
+| TTA | Eval-only: 6-variant TTA on Run 5 | 44.4% | — | 84.4% | ~20 min | — |
+| 8a | Pruned 673-class | 69.0% | — | 92.4% | ~9.5 hrs | 1x L40S |
+| **9** | **Final: unfrozen, 200 epochs** | **74.8%** | **79.1%** | **96.9%** | **23.0 hrs** | **1x L40S** |
 
-**Run 1 → Run 2 lesson:** Contiguous spatial split along AP axis excluded all Cerebrum pixels from val/test (Cerebrum is anterior-only in mouse brain). Interleaved split fixed this — every 10th slice goes to val/test, ensuring all brain regions appear in all splits.
+**Runs 1→2:** Contiguous spatial split along AP axis excluded all Cerebrum pixels from val/test. Interleaved split fixed this (+37.3% mIoU on 6-class task).
 
-**Run 3 (depth-2):** 15 of 19 classes had valid IoU (4 classes absent from val set). Top classes: Cerebrum 95.8%, Brain stem 94.5%, Cerebellum 93.0%. Lowest: extrapyramidal fiber systems 44.4%.
+**Run 3 (depth-2):** 15 of 19 classes had valid IoU. Top: Cerebrum 95.8%, Brain stem 94.5%, Cerebellum 93.0%.
 
-**Run 4 (full, frozen):** 503 of 1,328 classes had valid IoU (825 absent from val). Top: Caudoputamen 95.2%, Background 94.3%, Main olfactory bulb 93.8%. See [docs/dinov2_model_research.md](docs/dinov2_model_research.md) for analysis and next-step recommendations.
+**Run 4 (full, frozen):** 503 of 1,328 classes had valid IoU. Top: Caudoputamen 95.2%, Background 94.3%, Main olfactory bulb 93.8%.
 
-**Run 5 (full, unfrozen backbone):** +8.5% mIoU gain from unfreezing last 4 DINOv2 blocks (20-23) with differential LR (backbone 1e-5, head 1e-4). 100 epochs, batch=2 + grad_accum=2. See [docs/step11_plan.md](docs/step11_plan.md) for deployment lessons (OOM, BatchNorm, gradient checkpointing fixes).
+**Run 5 (unfrozen backbone):** +8.5% mIoU from unfreezing last 4 DINOv2 blocks (20-23) with differential LR (backbone 1e-5, head 1e-4). Single largest training improvement.
+
+**Runs 6-7 (negative results):** Weighted Dice+CE loss (−1.6%) and extended augmentation (−6.5%) both degraded performance. TTA was catastrophic (−24.4%) due to lack of rotational equivariance.
+
+**Run 8a (class pruning):** Removing 655 zero-pixel classes from the output head had no meaningful effect (+0.2% mIoU). Useful only for halving logits memory.
+
+**Run 9 (final model):** Doubling training from 100→200 epochs yielded +6.0% mIoU — second largest improvement. Sliding window evaluation added +4.4% mIoU and revealed 168 additional valid classes. See [docs/paper_draft.md](docs/paper_draft.md) for the full ablation study.
 
 ## Using Trained Models
 
@@ -137,13 +149,16 @@ for details. Single-GPU runs with `batch_size=4` have been verified to work with
 
 ```bash
 # 1. Download model (~1.2 GB, requires Databricks CLI)
-databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/unfrozen ./models/dinov2-upernet-unfrozen
+databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/final-200ep ./models/dinov2-upernet-final
 
 # 2. Run inference on a single image
 python scripts/run_inference.py --image path/to/brain_slice.jpg --output results/
 
 # 3. Or batch process a directory
 python scripts/run_inference.py --image-dir images/ --output results/
+
+# 4. Full-resolution tiled inference (sliding window)
+python scripts/run_inference.py --image path/to/brain_slice.jpg --output results/ --sliding-window
 ```
 
 **Compute Requirements:**
@@ -196,12 +211,17 @@ histological-image-analysis/
 │   ├── conftest.py                      # Shared fixtures
 │   └── fixtures/minimal_ontology.json   # 15-structure test fixture
 ├── notebooks/
-│   ├── finetune_coarse.ipynb            # Coarse 6-class training
-│   ├── finetune_depth2.ipynb            # Depth-2 19-class training
-│   ├── finetune_full.ipynb              # Full 1,328-class training (frozen backbone)
-│   └── finetune_unfrozen.ipynb          # Full 1,328-class training (unfrozen backbone)
+│   ├── finetune_final_200ep.ipynb       # Final model: 200 epochs, 79.1% mIoU (Run 9)
+│   ├── generate_paper_figures.ipynb     # Generate all 6 paper figures (Databricks)
+│   └── historical/                      # Previous training runs (Runs 1-8a)
+│       ├── finetune_coarse.ipynb        # Coarse 6-class training
+│       ├── finetune_depth2.ipynb        # Depth-2 19-class training
+│       ├── finetune_full.ipynb          # Full 1,328-class (frozen backbone)
+│       └── finetune_unfrozen.ipynb      # Full 1,328-class (unfrozen backbone)
 ├── scripts/
-│   └── download_allen_data.py           # Local download of Allen Brain data
+│   ├── download_allen_data.py           # Local download of Allen Brain data
+│   ├── run_inference.py                 # CLI inference tool with batch processing
+│   └── generate_paper_figures.py        # Generate figures locally (Figs 1, 3 only)
 ├── docs/                                # Design docs and progress tracking
 │   ├── progress.md                      # Full project history
 │   ├── step10_plan.md                   # Step 10 plan (for LLM continuity)

@@ -195,11 +195,12 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 | `exploration/getting_started_medical_imaging_fiftyone (2).ipynb` | FiftyOne DICOM/CT tutorial (learning exercise) | Complete |
 | `exploration/allen_brain_data_explorer.ipynb` | Browse Allen Brain data sources to choose dataset | Complete — all cells run |
 | `exploration/databricks_connectivity_check.ipynb` | Verify Databricks can reach Allen data sources | Complete — 6 blocked, 2 pass |
-| `notebooks/finetune_unfrozen.ipynb` | Run 5 — full 1,328-class, unfrozen backbone (BEST) | **Complete — 68.8% mIoU** |
+| `notebooks/finetune_unfrozen.ipynb` | Run 5 — full 1,328-class, unfrozen backbone | Complete — 68.8% mIoU |
 | `notebooks/finetune_augmented.ipynb` | Run 7 — extended augmentation (NEGATIVE) | Complete — 62.3% mIoU |
 | `notebooks/eval_tta.ipynb` | Step 12 TTA eval on Run 5 (NEGATIVE) | Complete — 44.4% mIoU |
 | `notebooks/finetune_pruned_multiaxis.ipynb` | Run 8 — pruned classes + multi-axis (combined) | Created — hit BatchNorm error, superseded by ablation |
-| `notebooks/finetune_pruned_ablation.ipynb` | Run 8a/8b — ablation with diagnostics | **Created — deployed, awaiting results** |
+| `notebooks/finetune_pruned_ablation.ipynb` | Run 8a — ablation with diagnostics | Complete — 69.0% mIoU |
+| `notebooks/finetune_final_200ep.ipynb` | **Run 9 — FINAL mouse model, 200 epochs (BEST)** | **Complete — 74.8% mIoU (CC), 79.1% mIoU (SW)** |
 | `notebooks/historical/finetune_coarse.ipynb` | Runs 1-2 — coarse 6-class | Complete (historical) |
 | `notebooks/historical/finetune_depth2.ipynb` | Run 3 — depth-2 19-class | Complete (historical) |
 | `notebooks/historical/finetune_full.ipynb` | Run 4 — full 1,328-class frozen | Complete (historical) |
@@ -270,18 +271,16 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
     - MLflow artifacts saved with corrected pattern: `mlflow.transformers.log_model()` — confirmed working.
     - Model saved: `/dbfs/FileStore/allen_brain_data/models/augmented`.
     - Infrastructure retained: augmentation code and tests remain for possible future use with reduced intensity.
-14. **Step 12 — Data-centric improvements** — **IN PROGRESS (Steps 0-3 DONE, Step 4 next)**. See `docs/step12_plan.md`.
+14. **Step 12 — Data-centric improvements** — **MOUSE MODEL COMPLETE**. See `docs/step12_plan.md`.
     - **Diagnosis:** Data scarcity is the binding constraint (1,016 samples / 1,328 classes / 657 with zero pixels). Model rejects high-intensity interventions (Runs 6-7 both regressed).
-    - **Step 0 (TTA):** DONE — **NEGATIVE RESULT**. 6-variant TTA (original + hflip + 4×rot90) catastrophically regressed: 68.4% → 44.4% mIoU (−24.05%), 92.1% → 84.4% accuracy (−7.8%). 482/504 classes regressed, only 8 improved. Root cause: model lacks rotational equivariance — rot90 variants are noise (50% of logit budget). Reinforces Run 7 rot90 augmentation failure. Hflip-only TTA not tested separately but expected marginal (+0.1-0.5%).
-    - **Step 1 (augmentation preset):** DONE — Added `augmentation_preset` parameter to `BrainSegmentationDataset` (`dataset.py`). Values: `"baseline"` (Run 5: flip+rot15+jitter), `"extended"` (Run 7: all 6), `"none"` (disabled). Default is `"baseline"` — backward compatible. 6 new tests.
-    - **Step 2 (class pruning):** DONE — Added `OntologyMapper.build_present_mapping(full_mapping, present_class_ids)` to `ontology.py`. Takes full mapping + set of class IDs with >0 training pixels, returns filtered mapping with contiguous IDs. Absent classes → background. 9 new tests.
-    - **Step 3 (multi-axis slicing):** DONE — Generalized `CCFv3Slicer.get_slice(index, axis=0)` to support axis 0/1/2 in `ccfv3_slicer.py`. Added `_get_valid_indices(axis)` with same 10% brain-pixel threshold. Added `multi_axis=False` to `iter_slices()` — when True and split="train", appends axial+sagittal valid slices; val/test remain coronal-only. Passed through to `BrainSegmentationDataset` via `multi_axis` parameter. 17 new tests.
-    - **Step 4 (Run 8 notebook):** DONE — Two notebooks created:
-      - `finetune_pruned_multiaxis.ipynb`: Combined pruning + multi-axis notebook (8 cells). Scans coronal training slices for present classes, builds pruned mapping, creates multi-axis dataset, trains, evaluates, saves with corrected MLflow pattern.
-      - `finetune_pruned_ablation.ipynb`: Ablation notebook with diagnostics (10 cells). `ENABLE_MULTI_AXIS` config flag (default False). Run as 8a (pruned-only, coronal) to isolate class pruning, then 8b (pruned + multi-axis) as clean ablation. Diagnostic cells: per-class IoU histogram + CDF, zero-IoU analysis, class size vs IoU scatter + correlation, cross-axis evaluation (samples every 10th sagittal/axial slice, reports per-axis mIoU). Logs training data composition + diagnostic metrics to MLflow. Saves ablation metadata JSON.
-      - Makefile targets: `deploy-notebook-pruned-multiaxis`, `deploy-notebook-pruned-ablation`. Awaiting deployment + Databricks run.
-    - **Steps 5-7:** PENDING (focal loss, sliding window eval, write-up/paper).
-    - **Steps 8-10 (human model):** PENDING — separate human brain segmentation model. Strategy: finish mouse optimization first, then build a dedicated human model using lessons learned (architecture, hyperparams, augmentation regime, optionally mouse checkpoint as initialization). Human model trained exclusively on human data. Blocker: no human ground truth annotations confirmed yet — Step 8 investigates Allen API for human SVGs and surveys external sources (BigBrain, Jülich).
+    - **Step 0 (TTA):** DONE — **NEGATIVE RESULT**. 6-variant TTA catastrophically regressed: 68.4% → 44.4% mIoU (−24.05%).
+    - **Step 1 (augmentation preset):** DONE — `augmentation_preset` parameter added. 6 new tests.
+    - **Step 2 (class pruning):** DONE — `build_present_mapping()` added. 9 new tests.
+    - **Step 3 (multi-axis slicing):** DONE — Multi-axis support added. 17 new tests.
+    - **Step 4 (Run 8a):** DONE — **NEUTRAL RESULT**. Pruned 673-class: 69.0% mIoU (+0.2% within noise). Cross-axis: coronal 68.9%, axial 3.2%, sagittal 0.5%.
+    - **Step 5 (Run 9 — FINAL):** DONE — **74.8% mIoU (center-crop), 79.1% mIoU (sliding window), 96.9% accuracy (SW)**. 200 epochs, identical config to Run 5. +6.0% mIoU from extended training. Sliding window eval included (Step 6 partially addressed). Model saved to `/dbfs/FileStore/allen_brain_data/models/final-200ep`.
+    - **Steps 6-7:** Sliding window eval done in Run 9 notebook. Write-up/paper PENDING.
+    - **Steps 8-10 (human model):** NEXT — separate human brain segmentation model. Human data already downloaded and uploaded (4,463 SVGs, 14,565 images, 6 donors). Step 8 (ground truth investigation) is the immediate next step.
     - **Test suite:** 211/211 pass (was 181).
 15. **Human data status — DOWNLOAD + UPLOAD COMPLETE (2026-03-16):**
     - See `docs/data_download_plan_human.md` for full details.
@@ -303,6 +302,10 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 ## Compact Context (for /compact)
 
 **Project:** `histological-image-analysis` — Fine-tune a vision model to identify brain structures in Nissl-stained mouse/human brain slides using Allen Brain Institute data.
+
+**Mouse model: COMPLETE.** Final model (Run 9): **74.8% mIoU** (center-crop), **79.1% mIoU** (sliding window), **96.9% accuracy** (SW), 200 epochs, DINOv2-Large + UperNet, 1,328 classes. Saved to `/dbfs/FileStore/allen_brain_data/models/final-200ep`. See `docs/mouse_model_findings.md` for full results and human model recommendations.
+
+**Current focus: Human model pipeline (Step 8 — ground truth investigation).**
 
 **Compute:** Databricks 17.3 LTS, g6e.16xlarge (L40S 48GB VRAM, 512GB RAM), single node. Firewall blocks Allen domains — use local download + Workspace upload.
 
@@ -346,11 +349,9 @@ See previous entries — ABC Atlas, MERFISH, AllenSDK details unchanged. Key tak
 
 **Step 11c (extended augmentation):** DONE — NEGATIVE RESULT. Run 7: mIoU **62.3%** (−6.5% vs unfrozen 68.8%), accuracy 90.1% (−2.4% vs Run 5's 92.5%), eval loss 0.4894, 100 epochs. Extended `_apply_augmentation()` with 3 new transforms (rot90, blur, elastic deformation). Regression: augmentation too aggressive for 1,016 samples — elastic deformation (α=50) warps anatomical boundaries, compounding 6 transforms heavily distorts every sample. Both mIoU and accuracy dropped. Infrastructure (code + 12 tests) retained. MLflow artifacts saved successfully with corrected pattern. Model: `/dbfs/FileStore/allen_brain_data/models/augmented`.
 
-**Best model remains Run 5 (unfrozen baseline): 68.8% mIoU.** Four experiments after Run 5 all failed to meaningfully improve: weighted loss (−1.6%), augmentation (−6.5%), TTA eval-only (−24%), class pruning (+0.2% — within noise). Run 8a (class pruning ablation) showed that removing 655 zero-pixel classes has no effect on accuracy — the model already assigns near-zero probability to absent classes. Cross-axis diagnostic confirmed the model cannot generalize beyond coronal (axial 3.2%, sagittal 0.5% mIoU). The strongest predictor of per-class performance is pixel count (r=0.794). Next: decide whether to run 8b (multi-axis) or move to sliding window / write-up. After mouse: separate human model (Steps 8-10 of step12_plan.md).
+**Step 12 Run 8a (class pruning ablation):** DONE — NEUTRAL RESULT. Run 8a: mIoU **69.0%** (+0.2% vs Run 5 68.8%), accuracy 92.4% (−0.1%), 673 classes (655 pruned), 1,016 coronal slices, ~9.5 hrs. Softmax dilution hypothesis NOT confirmed. Cross-axis: coronal 68.9%, axial 3.2%, sagittal 0.5% — model is orientation-specific. Model: `/dbfs/FileStore/allen_brain_data/models/pruned-coronal-only`.
 
-**Step 12 Run 8a (class pruning ablation):** DONE — NEUTRAL RESULT. Run 8a: mIoU **69.0%** (+0.2% vs Run 5 68.8%), accuracy 92.4% (−0.1%), 673 classes (655 pruned), 1,016 coronal slices, ~9.5 hrs. Softmax dilution hypothesis NOT confirmed. Diagnostic: 9 zero-IoU classes, 424 high-IoU (≥0.5), correlation(log_pixels, IoU) = 0.794. Cross-axis: coronal 68.9%, axial 3.2%, sagittal 0.5% — model is orientation-specific. Model: `/dbfs/FileStore/allen_brain_data/models/pruned-coronal-only`.
-
-**Step 12 Run 9 (final mouse model, 200 epochs):** QUEUED — Run 5 config exactly, but 200 epochs instead of 100. Val loss still declining at epoch 100 (0.363). Expected +1-2% mIoU from convergence. Skipping focal loss and multi-axis (both proven ineffective). This is the final mouse training run before pivoting to human data. Notebook: `finetune_final_200ep.ipynb` (created 2026-03-16). Target model: `/dbfs/FileStore/allen_brain_data/models/final-mouse-200ep`. After Run 9: human ground truth investigation (Steps 8-10) and paper write-up (Step 7). All mouse findings documented in `docs/mouse_model_findings.md` for human team reference.
+**Step 12 Run 9 (final mouse model, 200 epochs):** DONE — **BEST MODEL**. Run 9: mIoU **74.8%** (center-crop, +6.0% vs Run 5), **79.1%** (sliding window), accuracy **94.1%** (CC) / **96.9%** (SW), eval loss **0.300** (−17.3% vs Run 5's 0.363), training loss 0.557, 200 epochs, 23.0 hrs on 1x L40S. The +6.0% gain from doubled epochs was 3× larger than predicted (+1-2%), proving the model was substantially underfit at 100 epochs. Sliding window eval (518×518 tiles, stride 259, 50% overlap) revealed 671 valid classes (vs 503 center-crop) — 168 structures exist only at slice edges. Top classes: Caudoputamen 97.9%, Main olfactory bulb 97.5%, Background 97.3%. Model: `/dbfs/FileStore/allen_brain_data/models/final-200ep`. MLflow run: `final-200ep-1328class-20260316-1405`. All mouse findings documented in `docs/mouse_model_findings.md` for human team reference.
 
 **MLflow artifact save pattern (CRITICAL — learned from Run 6 recovery + Run 7/8a failures):**
 All future training notebooks MUST follow this pattern in the final save cell:
@@ -366,19 +367,20 @@ The older notebooks (`finetune_unfrozen.ipynb`, `finetune_weighted_loss.ipynb`) 
 
 **Training run history:**
 
-| Run | Config | mIoU | Delta | Runtime | Notebook | Model Dir |
-|-----|--------|------|-------|---------|----------|-----------|
-| 1 | Coarse 6-class, frozen, spatial split | 50.7% | — | 23 min | `finetune_coarse.ipynb` | overwritten |
-| 2 | Coarse 6-class, frozen, interleaved | 88.0% | +37.3% | 23 min | `finetune_coarse.ipynb` | `coarse_6class` |
-| 3 | Depth-2 19-class, frozen | 69.6% | — | 25 min | `finetune_depth2.ipynb` | `depth2_19class` |
-| 4 | Full 1,328-class, frozen | 60.3% | — | 5.5 hrs | `finetune_full.ipynb` | `full_1328class` |
-| **5** | **Full 1,328-class, unfrozen** | **68.8%** | **+8.5%** | **11.3 hrs** | `finetune_unfrozen.ipynb` | **`unfrozen`** |
-| 6 | Full 1,328-class, weighted Dice+CE | 67.2% | −1.6% | ~33 hrs | `finetune_weighted_loss.ipynb` | `weighted-loss` |
-| 7 | Full 1,328-class, extended augmentation | 62.3% | −6.5% | ~11-14 hrs | `finetune_augmented.ipynb` | `augmented` |
-| TTA | Eval-only: 6-variant TTA on Run 5 | 44.4% | **−24.0%** | ~20 min | `eval_tta.ipynb` | — (eval only) |
-| 8a | Pruned 673-class, unfrozen, coronal-only | 69.0% | +0.2% | ~9.5 hrs | `finetune_pruned_ablation.ipynb` | `pruned-coronal-only` |
+| Run | Config | mIoU (CC) | mIoU (SW) | Delta vs prev best | Runtime | Notebook | Model Dir |
+|-----|--------|-----------|-----------|---------------------|---------|----------|-----------|
+| 1 | Coarse 6-class, frozen, spatial split | 50.7% | — | — | 23 min | `finetune_coarse.ipynb` | overwritten |
+| 2 | Coarse 6-class, frozen, interleaved | 88.0% | — | +37.3% | 23 min | `finetune_coarse.ipynb` | `coarse_6class` |
+| 3 | Depth-2 19-class, frozen | 69.6% | — | — | 25 min | `finetune_depth2.ipynb` | `depth2_19class` |
+| 4 | Full 1,328-class, frozen | 60.3% | — | — | 5.5 hrs | `finetune_full.ipynb` | `full_1328class` |
+| 5 | Full 1,328-class, unfrozen, 100ep | 68.8% | — | +8.5% | 11.3 hrs | `finetune_unfrozen.ipynb` | `unfrozen` |
+| 6 | Full 1,328-class, weighted Dice+CE | 67.2% | — | −1.6% | ~33 hrs | `finetune_weighted_loss.ipynb` | `weighted-loss` |
+| 7 | Full 1,328-class, extended augmentation | 62.3% | — | −6.5% | ~11-14 hrs | `finetune_augmented.ipynb` | `augmented` |
+| TTA | Eval-only: 6-variant TTA on Run 5 | 44.4% | — | −24.0% | ~20 min | `eval_tta.ipynb` | — (eval only) |
+| 8a | Pruned 673-class, unfrozen, coronal-only | 69.0% | — | +0.2% | ~9.5 hrs | `finetune_pruned_ablation.ipynb` | `pruned-coronal-only` |
+| **9** | **Full 1,328-class, unfrozen, 200ep** | **74.8%** | **79.1%** | **+6.0%** | **23.0 hrs** | **`finetune_final_200ep.ipynb`** | **`final-200ep`** |
 
-All model dirs are under `/dbfs/FileStore/allen_brain_data/models/`. Best model: **Run 5 (unfrozen) at 68.8% mIoU.** Four training experiments and one eval experiment after Run 5 all failed to meaningfully improve. Run 8a (+0.2%) is within noise.
+All model dirs are under `/dbfs/FileStore/allen_brain_data/models/`. Best model: **Run 9 (final-200ep) at 74.8% mIoU center-crop / 79.1% mIoU sliding window.** The two most impactful interventions were backbone unfreezing (+8.5%) and extended training to 200 epochs (+6.0%). Four other experiments (weighted loss, augmentation, TTA, class pruning) all failed.
 
 **Current augmentation pipeline** (`dataset.py:_apply_augmentation`, controlled by `augmentation_preset`):
 - **`"baseline"`** (default, Run 5 config): Horizontal flip (50%), rotation ±15°, color jitter (always)
@@ -398,6 +400,6 @@ All model dirs are under `/dbfs/FileStore/allen_brain_data/models/`. Best model:
 
 **Experimental results:** All training run data consolidated in `docs/experimental_results.md` — summary table, hyperparameter comparison, per-class IoU tables (all runs), training curves (Runs 3-7). Runs 1-2 training curves LOST (notebook outputs not preserved; those notebooks were never run on Databricks — original runs used step9/step10 prefixed notebooks).
 
-**Human data status:** 14,565 human Nissl images downloaded (17 GB, 6 donors, Allen Human Brain Atlas). Uploaded to Databricks Workspace. **NO pixel-level annotations exist** — no SVGs, no segmentation masks, no 3D reference volume for human. Uninvestigated lead: Allen web viewer shows structure delineations on reference plates — never tested `svg_download` for human `AtlasImage` IDs (only downloaded `SectionImage` raw donor data). External sources to investigate: BigBrain, Jülich Cytoarchitectonic Atlas. **Design decision: two separate models** — clean mouse model, then a dedicated human model using mouse learnings (architecture, hyperparams, optionally weight initialization) but trained exclusively on human data.
+**Human data status:** 14,565 human Nissl images + 4,463 SVG annotations downloaded. Uploaded to Databricks Workspace. Allen Human SectionImage SVGs: 524+ unique structure IDs, 96% have annotations. Allen Developing Human Atlas: 169 images + 169 SVGs. BigBrain + siibra volumes also downloaded. See `docs/data_download_plan_human.md`. **Design decision: two separate models** — mouse model COMPLETE (Run 9), now pivot to human model using mouse learnings (architecture, hyperparams, optionally Run 9 weight initialization) but trained exclusively on human data. **Next step: Step 8 — investigate human ground truth quality and build training pipeline.**
 
-**Repo files:** `docs/progress.md` (this file), `docs/experimental_results.md` (consolidated run data for paper), `docs/step12_plan.md` (Step 12 plan — now includes Steps 8-10 for human model), `docs/model_download_guide.md` (local inference guide), `docs/step11c_plan.md` (Step 11c plan + Run 7 results), `docs/step11b_plan.md` (Step 11b plan + Run 6 results), `docs/step11_plan.md` (Step 11 plan — complete), `docs/step10_plan.md` (Step 10 plan — complete), `docs/finetuning_recommendations.md` (comprehensive 4-phase roadmap with 15 recommendations), `docs/dinov2_model_research.md` (backbone research), `docs/step10_gpu_memory_review.md` (GPU memory lessons), `docs/joyful-popping-planet.md` (Step 9 tracker — complete), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training,losses}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training,losses}.py` + `conftest.py` + `fixtures/` — **211/211 pass**. Active notebooks: `notebooks/finetune_unfrozen.ipynb` (Run 5 baseline), `notebooks/finetune_augmented.ipynb` (Run 7), `notebooks/eval_tta.ipynb` (Step 12 TTA eval), `notebooks/finetune_pruned_multiaxis.ipynb` (Run 8 combined — superseded), `notebooks/finetune_pruned_ablation.ipynb` (Run 8a/8b ablation — deployed, awaiting results). Historical notebooks moved to `notebooks/historical/`. Scripts: `scripts/{download_allen_data,run_inference}.py`. Verification: `verify_model.py`. Infra: `Makefile` (20 targets), `.env.example`, `README.md`.
+**Repo files:** `docs/progress.md` (this file), `docs/experimental_results.md` (consolidated run data for paper), `docs/step12_plan.md` (Step 12 plan — now includes Steps 8-10 for human model), `docs/model_download_guide.md` (local inference guide), `docs/step11c_plan.md` (Step 11c plan + Run 7 results), `docs/step11b_plan.md` (Step 11b plan + Run 6 results), `docs/step11_plan.md` (Step 11 plan — complete), `docs/step10_plan.md` (Step 10 plan — complete), `docs/finetuning_recommendations.md` (comprehensive 4-phase roadmap with 15 recommendations), `docs/dinov2_model_research.md` (backbone research), `docs/step10_gpu_memory_review.md` (GPU memory lessons), `docs/joyful-popping-planet.md` (Step 9 tracker — complete), `docs/step8_implementation_plan.md`, `docs/step7_dataset_model_decision.md`, `docs/step5_6_completion_report.md`, `docs/references.md`, `docs/databricks_connectivity.md`. Source: `src/histological_image_analysis/{ontology,ccfv3_slicer,svg_rasterizer,dataset,training,losses}.py`. Tests: `tests/test_{ontology,ccfv3_slicer,svg_rasterizer,dataset,training,losses}.py` + `conftest.py` + `fixtures/` — **211/211 pass**. Active notebooks: `notebooks/finetune_final_200ep.ipynb` (**Run 9 — FINAL mouse model, 200ep, best**), `notebooks/finetune_unfrozen.ipynb` (Run 5), `notebooks/finetune_augmented.ipynb` (Run 7), `notebooks/eval_tta.ipynb` (Step 12 TTA eval), `notebooks/finetune_pruned_multiaxis.ipynb` (Run 8 combined — superseded), `notebooks/finetune_pruned_ablation.ipynb` (Run 8a ablation). Historical notebooks moved to `notebooks/historical/`. Scripts: `scripts/{download_allen_data,run_inference}.py`. Verification: `verify_model.py`. Infra: `Makefile` (20 targets), `.env.example`, `README.md`.

@@ -69,12 +69,13 @@ databricks configure --token
 
 ## Available Models
 
-| Model | Classes | Backbone | Path | MLflow Run ID |
-|-------|---------|----------|------|---------------|
-| Coarse | 6 | Frozen | `dbfs:/FileStore/allen_brain_data/models/coarse_6class` | TBD |
-| Depth-2 | 19 | Frozen | `dbfs:/FileStore/allen_brain_data/models/depth2` | TBD |
-| Full | 1,328 | Frozen | `dbfs:/FileStore/allen_brain_data/models/full` | TBD |
-| **Full (unfrozen)** | 1,328 | Last 4 blocks unfrozen | `dbfs:/FileStore/allen_brain_data/models/unfrozen` | `6cc49e1ccb0d4b30b371e9a071dcbe6f` |
+| Model | Classes | Backbone | Path | MLflow Run ID | mIoU |
+|-------|---------|----------|------|---------------|------|
+| Coarse | 6 | Frozen | `dbfs:/.../models/coarse_6class` | TBD | 88.0% |
+| Depth-2 | 19 | Frozen | `dbfs:/.../models/depth2` | TBD | 69.6% |
+| Full | 1,328 | Frozen | `dbfs:/.../models/full` | TBD | 60.3% |
+| Full (unfrozen) | 1,328 | Last 4 blocks unfrozen | `dbfs:/.../models/final-200ep` | `6cc49e1ccb0d4b30b371e9a071dcbe6f` | 68.8% |
+| **Final (200ep)** | **1,328** | **Last 4 blocks unfrozen** | **`dbfs:/.../models/final-200ep`** | — | **79.1% (SW)** |
 
 ---
 
@@ -90,10 +91,10 @@ mkdir -p models
 ### Step 2: Download Model
 
 ```bash
-# Download unfrozen model (~1.2 GB)
+# Download final model (~1.2 GB)
 databricks fs cp -r \
-  dbfs:/FileStore/allen_brain_data/models/unfrozen \
-  ./models/dinov2-upernet-unfrozen
+  dbfs:/FileStore/allen_brain_data/models/final-200ep \
+  ./models/dinov2-upernet-final
 
 # Download takes 2-5 minutes depending on connection speed
 ```
@@ -102,7 +103,7 @@ databricks fs cp -r \
 
 ```bash
 # List downloaded files
-ls -lh ./models/dinov2-upernet-unfrozen/
+ls -lh ./models/dinov2-upernet-final/
 
 # Expected output:
 # config.json                 (~1 KB)    - Model architecture config
@@ -113,7 +114,7 @@ ls -lh ./models/dinov2-upernet-unfrozen/
 # scheduler.pt               (optional)  - Can be deleted
 
 # Check total size
-du -sh ./models/dinov2-upernet-unfrozen/
+du -sh ./models/dinov2-upernet-final/
 # Expected: ~1.2G
 ```
 
@@ -121,7 +122,7 @@ du -sh ./models/dinov2-upernet-unfrozen/
 
 ```bash
 # Remove optimizer and scheduler (not needed for inference)
-cd ./models/dinov2-upernet-unfrozen/
+cd ./models/dinov2-upernet-final/
 rm -f optimizer.pt scheduler.pt rng_state*.pth
 
 # This reduces disk usage by ~2-3 GB if present
@@ -148,7 +149,7 @@ mkdir -p models
 mlflow artifacts download \
   --run-id 6cc49e1ccb0d4b30b371e9a071dcbe6f \
   --artifact-path model \
-  --dst-path ./models/dinov2-upernet-unfrozen
+  --dst-path ./models/dinov2-upernet-final
 ```
 
 ### Step 3: Verify Download
@@ -191,7 +192,7 @@ Create a test script to verify the model loads correctly:
 from transformers import UperNetForSemanticSegmentation, AutoImageProcessor
 import os
 
-MODEL_PATH = "./models/dinov2-upernet-unfrozen"
+MODEL_PATH = "./models/dinov2-upernet-final"
 
 print("=" * 60)
 print("MODEL VERIFICATION")
@@ -268,7 +269,7 @@ python verify_model.py
 
 ```bash
 # 1. Download the model (see sections above)
-databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/unfrozen ./models/dinov2-upernet-unfrozen
+databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/final-200ep ./models/dinov2-upernet-final
 
 # 2. Run inference on a single image
 python scripts/run_inference.py --image path/to/brain_slice.jpg --output results/
@@ -322,7 +323,7 @@ import torch
 import numpy as np
 
 # Load model and processor
-MODEL_PATH = "./models/dinov2-upernet-unfrozen"
+MODEL_PATH = "./models/dinov2-upernet-final"
 model = UperNetForSemanticSegmentation.from_pretrained(MODEL_PATH)
 processor = AutoImageProcessor.from_pretrained(MODEL_PATH)
 
@@ -431,7 +432,7 @@ model = model.to(device)
 ## Model File Structure
 
 ```
-models/dinov2-upernet-unfrozen/
+models/dinov2-upernet-final/
 ├── config.json                 # Model architecture configuration
 │   ├── num_labels: 1328
 │   ├── hidden_size: 1024
@@ -451,7 +452,7 @@ models/dinov2-upernet-unfrozen/
 
 ## Model Metadata
 
-**Unfrozen Model (`6cc49e1ccb0d4b30b371e9a071dcbe6f`):**
+**Final Model (Run 9, `final-200ep`):**
 
 | Attribute | Value |
 |-----------|-------|
@@ -462,8 +463,11 @@ models/dinov2-upernet-unfrozen/
 | Backbone | Last 4 blocks unfrozen (blocks 20-23) |
 | Training Data | Allen CCFv3 10µm Nissl mouse brain (1,016 slices) |
 | Input Size | 518×518 (DINOv2 native resolution) |
-| Validation mIoU | 60.3% → **TBD** (unfrozen) |
-| Training Time | ~11 hours (100 epochs, 1x L40S 48GB) |
+| mIoU (center-crop) | 74.8% |
+| mIoU (sliding window) | **79.1%** |
+| Pixel Accuracy | 96.9% (sliding window) |
+| Valid Classes | 671 (sliding window) / 503 (center-crop) |
+| Training Time | 23.0 hours (200 epochs, 1x L40S 48GB) |
 | Differential LR | Backbone 1e-5, Head 1e-4 |
 
 ---
@@ -476,7 +480,7 @@ models/dinov2-upernet-unfrozen/
 4. **See also:**
    - [docs/finetuning_recommendations.md](finetuning_recommendations.md) - Further training improvements
    - [docs/dinov2_model_research.md](dinov2_model_research.md) - Model architecture analysis
-   - [notebooks/finetune_unfrozen.ipynb](../notebooks/finetune_unfrozen.ipynb) - Training notebook
+   - [notebooks/finetune_unfrozen.ipynb](../notebooks/historical/finetune_unfrozen.ipynb) - Training notebook
 
 ---
 

@@ -36,6 +36,29 @@ _COARSE_CLASS_NAMES: dict[int, str] = {
     5: "ventricular systems",
 }
 
+# BigBrain 9-class tissue classification (full_cls_200um_9classes.nii.gz)
+BIGBRAIN_9CLASS_NAMES: dict[int, str] = {
+    0: "Background",
+    1: "Gray Matter",
+    2: "White Matter",
+    3: "Cerebrospinal Fluid",
+    4: "Meninges",
+    5: "Blood Vessels",
+    6: "Bone/Skull",
+    7: "Muscle",
+    8: "Artifact",
+    9: "Other/Unknown",
+}
+
+
+def build_bigbrain_9class_mapping() -> dict[int, int]:
+    """Build identity mapping for BigBrain 9-class tissue classification.
+
+    The BigBrain classified volume uses integer labels 0-9 directly as class IDs.
+    No ontology hierarchy needed — this is a simple identity mapping.
+    """
+    return {i: i for i in range(10)}
+
 
 class OntologyMapper:
     """Load Allen Brain structure ontology and map structure IDs to class IDs.

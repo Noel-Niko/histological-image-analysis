@@ -272,18 +272,40 @@ Axial slices are 1320×1140 — a 518×518 crop covers ~18% of area vs ~29% for 
 
 **Expected outcome:** 70-72% mIoU (Run 5 68.8% + 1-2% from convergence)
 
-**Deliverables:**
-- `notebooks/finetune_final_200ep.ipynb` — training notebook
-- Model saved to `/dbfs/FileStore/allen_brain_data/models/final-mouse-200ep`
-- Full metrics logged to MLflow
-- Updated docs/experimental_results.md with Run 9 results
+### Step 5 Results (2026-03-17)
 
-**After Run 9:** The mouse model is complete. All further work goes to human ground truth investigation (Steps 8-10) and paper write-up (Step 7).
+**EXCEEDED EXPECTATIONS.** The +6.0% mIoU gain was 3× larger than the predicted +1-2%.
+
+| Metric | Run 5 (100ep) | Run 9 (200ep) | Delta |
+|--------|---------------|---------------|-------|
+| mIoU (center-crop) | 68.8% | **74.8%** | **+6.0%** |
+| mIoU (sliding window) | — | **79.1%** | +4.4% vs CC |
+| Accuracy (center-crop) | 92.5% | **94.1%** | +1.7% |
+| Accuracy (sliding window) | — | **96.9%** | +2.8% vs CC |
+| Eval loss | 0.363 | **0.300** | −17.3% |
+| Training loss | 0.730 | **0.557** | −23.7% |
+| Valid classes (CC) | 503 | 503 | 0 |
+| Valid classes (SW) | — | **671** | +168 |
+| Runtime | 11.3 hrs | 23.0 hrs | 2× |
+
+**Key findings:**
+1. Model was substantially underfit at 100 epochs — the largest post-unfreezing improvement.
+2. Sliding window eval (Cell 7) reveals 168 additional valid classes that only appear at slice edges.
+3. Top classes now approach 98% IoU (Caudoputamen 97.9%, Main olfactory bulb 97.5%).
+4. Eval loss still declining at epoch 200 but rate is slowing — diminishing returns from more epochs.
+
+**Deliverables (all complete):**
+- `notebooks/finetune_final_200ep.ipynb` — training notebook with sliding window eval
+- Model saved to `/dbfs/FileStore/allen_brain_data/models/final-200ep`
+- Full metrics logged to MLflow (run: `final-200ep-1328class-20260316-1405`)
+- `docs/mouse_model_findings.md` updated with Run 9 results
+
+**Decision: Mouse model is COMPLETE.** No 300-epoch run — diminishing returns do not justify compute vs. starting human pipeline. All further work goes to human ground truth investigation (Steps 8-10) and paper write-up (Step 7).
 
 **Files:**
 | File | Action |
 |------|--------|
-| `notebooks/finetune_final_200ep.ipynb` | **Created (2026-03-16)** — Run 9 training notebook |
+| `notebooks/finetune_final_200ep.ipynb` | **Created (2026-03-16), run (2026-03-17)** — Run 9 training notebook |
 | `Makefile` | **Updated** — added `deploy-notebook-final` target |
 
 ---
@@ -475,11 +497,11 @@ Axial slices are 1320×1140 — a 518×518 crop covers ~18% of area vs ~29% for 
 | 1 | Revert augmentation (add `augmentation_preset`) | DONE — 6 tests, baseline/extended/none presets |
 | 2 | Prune output head (~671 classes) | DONE — `build_present_mapping()`, 9 tests |
 | 3 | Multi-axis slicing (train only, coronal val) | DONE — `get_slice(axis)`, `_get_valid_indices(axis)`, `multi_axis` flag, 14 tests |
-| 4 | Run 8 notebook + deploy | DONE — Two notebooks: `finetune_pruned_multiaxis.ipynb` (combined) + `finetune_pruned_ablation.ipynb` (ablation with diagnostics, `ENABLE_MULTI_AXIS` flag) |
-| 5 | Focal loss sweep (conditional) | PENDING |
-| 6 | Sliding window eval | PENDING |
-| 7 | Write-up / paper | PENDING |
-| 8 | Investigate human ground truth availability | PENDING — probe Allen API for human SVGs, survey BigBrain/Jülich |
+| 4 | Run 8 notebook + deploy | DONE — Run 8a: 69.0% mIoU (+0.2%, neutral). Cross-axis: 3.2%/0.5% on unseen axes. |
+| 5 | Final mouse model — 200 epochs (Run 9) | **DONE — 74.8% mIoU (CC), 79.1% mIoU (SW), 96.9% accuracy (SW). +6.0% vs Run 5.** |
+| 6 | Sliding window eval | DONE — included in Run 9 notebook (Cell 7). 79.1% mIoU, 671 valid classes. |
+| 7 | Write-up / paper | PENDING — mouse results complete, can begin draft |
+| 8 | Investigate human ground truth availability | **NEXT** — probe Allen API for human SVGs, survey BigBrain/Jülich |
 | 9 | Human training data pipeline | PENDING — depends on Step 8 outcome (Path A/B/C/D) |
 | 10 | Human model evaluation and validation | PENDING — requires Step 9 |
 

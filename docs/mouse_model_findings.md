@@ -1,8 +1,10 @@
 # Mouse Model Findings — Transfer Learnings for Human Finetuning
 
-**Document Purpose:** Comprehensive record of all findings from mouse brain segmentation experiments (Runs 1-8a) to inform the human brain model training strategy. Written 2026-03-16 after completing the full ablation study.
+**Document Purpose:** Comprehensive record of all findings from mouse brain segmentation experiments (Runs 1-9) to inform the human brain model training strategy. Originally written 2026-03-16 after completing the full ablation study. Updated 2026-03-17 with Run 9 (final 200-epoch model) results.
 
 **Context:** This project trains two separate models: (1) a mouse model using Allen Mouse Brain Atlas CCFv3 Nissl data (1,320 coronal slices, 1,328 brain structures), and (2) a human model using Allen Human Brain Atlas data (14,565 Nissl sections, 6 donors, ground truth TBD). This document captures the mouse model lessons to accelerate human model development.
+
+**Final mouse model:** Run 9 (200 epochs) — **74.8% mIoU** (center-crop), **79.1% mIoU** (sliding window), **96.9% accuracy** (sliding window). Saved to `/dbfs/FileStore/allen_brain_data/models/final-200ep`.
 
 ---
 
@@ -11,10 +13,11 @@
 ### Critical Success Factors ✓
 
 1. **Backbone unfreezing is essential** — Frozen backbone: 60.3% mIoU. Unfrozen (last 4 of 24 blocks): 68.8% mIoU (+8.5%). This is the single largest improvement.
-2. **Simple augmentation is suffi1cient** — Baseline (flip + rot15° + jitter) works. Extended augmentation (rot90, elastic, blur) hurts (−6.5%).
-3. **Cross-entropy loss is optimal** — Weighted Dice+CE underperforms plain CE (−1.6%).
-4. **Interleaved train/val/test split** — Spatial split causes distribution shift (50.7% → 88.0% mIoU switch).
-5. **100+ epochs needed** — Val loss still declining at epoch 100 for all unfrozen runs.
+2. **200 epochs required for convergence** — Run 5 (100ep): 68.8% mIoU. Run 9 (200ep): 74.8% mIoU (+6.0%). The model was substantially underfit at 100 epochs. This is the second-largest improvement after backbone unfreezing.
+3. **Simple augmentation is sufficient** — Baseline (flip + rot15° + jitter) works. Extended augmentation (rot90, elastic, blur) hurts (−6.5%).
+4. **Cross-entropy loss is optimal** — Weighted Dice+CE underperforms plain CE (−1.6%).
+5. **Interleaved train/val/test split** — Spatial split causes distribution shift (50.7% → 88.0% mIoU switch).
+6. **Sliding window eval captures true performance** — Center-crop (518×518) underestimates mIoU by ~4% and misses 168 classes that only appear at slice edges. Sliding window: 79.1% mIoU, 671 valid classes (vs center-crop: 74.8%, 503 classes).
 
 ### Proven Failures ✗
 
@@ -93,7 +96,8 @@ These are hard requirements that must be followed for UperNet to train successfu
 | Config | mIoU | Accuracy | Trainable Params | Notes |
 |--------|------|----------|------------------|-------|
 | Frozen | 60.3% | 91.3% | 15M (4.4%) | Only decode head trained |
-| Unfrozen (last 4) | 68.8% | 92.5% | 88M (25.7%) | Best config |
+| Unfrozen (last 4), 100ep | 68.8% | 92.5% | 88M (25.7%) | Run 5 |
+| Unfrozen (last 4), 200ep | **74.8%** | **94.1%** | 88M (25.7%) | **Run 9 (final)** |
 
 **Learning rate strategy:**
 - Backbone blocks: 1e-5 (10× lower than head)
@@ -102,7 +106,7 @@ These are hard requirements that must be followed for UperNet to train successfu
 
 **For human model:**
 - Start with unfrozen backbone from the beginning (skip the frozen baseline unless compute is very limited)
-- Consider starting from Run 5 mouse weights (`UperNetForSemanticSegmentation.from_pretrained()`) if human structures have anatomical overlap with mouse (e.g., cortical layers, hippocampus, cerebellum)
+- Consider starting from Run 9 mouse weights (`UperNetForSemanticSegmentation.from_pretrained("/dbfs/FileStore/allen_brain_data/models/final-200ep")`) if human structures have anatomical overlap with mouse (e.g., cortical layers, hippocampus, cerebellum)
 
 ### 2. Loss Functions
 
@@ -258,18 +262,24 @@ Interleaved split ensures train and val slices sample the full rostral-caudal ax
 
 ### Epoch Requirements
 
-All unfrozen runs (5, 6, 7, 8a) show **declining validation loss at epoch 100**. The model has not converged yet.
+**Confirmed by Run 9:** 100 epochs is insufficient. 200 epochs yields +6.0% mIoU over 100 epochs with identical config.
 
-**Estimated convergence:** 150–200 epochs based on loss trajectory.
+| Epochs | mIoU (CC) | Accuracy (CC) | Eval Loss | Training Loss |
+|--------|-----------|---------------|-----------|---------------|
+| 100 (Run 5) | 68.8% | 92.5% | 0.363 | 0.730 |
+| 200 (Run 9) | **74.8%** | **94.1%** | **0.300** | **0.557** |
+| Delta | +6.0% | +1.7% | −17.3% | −23.7% |
+
+Eval loss dropped from 0.363 → 0.300 at epoch 200 — still declining but the rate of improvement is slowing. A 300-epoch run would likely yield diminishing returns (+1-2% mIoU at most, at a cost of ~11 additional hours). The model is approaching but has not fully reached convergence.
 
 **Training time (NVIDIA L40S 48GB):**
 - 100 epochs: ~9-11 hours (unfrozen, batch=4)
-- 200 epochs: ~18-22 hours (estimated)
+- 200 epochs: ~23 hours (measured, Run 9)
 
 **For human model:**
 - Budget 200 epochs minimum
 - Monitor val loss — if it plateaus before 200, can stop early
-- If dataset is 10× larger (e.g., 10,000 slices), may need 300+ epochs
+- If dataset is 10× larger (e.g., 10,000 slices), fewer epochs per sample may suffice but total training time will increase
 
 ### Learning Rate Schedule
 
@@ -328,26 +338,131 @@ model = UperNetForSemanticSegmentation.from_pretrained(artifact_path)
 
 ---
 
+## Run 9: Final Mouse Model Results (200 Epochs)
+
+**Run date:** 2026-03-16 to 2026-03-17 | **Runtime:** 23.0 hours on 1× NVIDIA L40S 48GB
+
+### Center-Crop Evaluation (comparable to all previous runs)
+
+| Metric | Run 5 (100ep) | Run 9 (200ep) | Delta |
+|--------|---------------|---------------|-------|
+| mIoU | 68.8% | **74.8%** | **+6.0%** |
+| Accuracy | 92.5% | **94.1%** | +1.7% |
+| Eval loss | 0.363 | **0.300** | −17.3% |
+| Training loss | 0.730 | **0.557** | −23.7% |
+| Valid classes | 503 | 503 | 0 |
+
+### Sliding Window Evaluation (new — full-resolution tiled inference)
+
+| Metric | Center-Crop | Sliding Window | Delta |
+|--------|-------------|----------------|-------|
+| mIoU | 74.8% | **79.1%** | **+4.4%** |
+| Accuracy | 94.1% | **96.9%** | +2.8% |
+| Valid classes | 503 | **671** | **+168** |
+
+Sliding window uses 518×518 tiles with 50% overlap (stride 259), averaging logits in overlapping regions. This evaluates the full 800×1140 coronal slice instead of a single center crop.
+
+The +168 valid classes from sliding window eval means 168 structures exist only at slice edges (outside the 518×518 center crop) and were invisible to all previous evaluations. These are predominantly small, peripheral structures.
+
+### Top 10 Classes by IoU (center-crop)
+
+| Class | IoU |
+|-------|-----|
+| Caudoputamen | 97.9% |
+| Main olfactory bulb | 97.5% |
+| Background | 97.3% |
+| Nodulus (X) | 96.4% |
+| Anterior olfactory nucleus | 95.8% |
+| Field CA1 | 95.2% |
+| Uvula (IX) | 95.1% |
+| Lobule III | 95.1% |
+| Nucleus accumbens | 94.7% |
+| Periaqueductal gray | 94.5% |
+
+### Bottom 10 Classes by IoU (non-zero, center-crop)
+
+| Class | IoU |
+|-------|-----|
+| Primary somatosensory area, lower limb, layer 2/3 | 2.3% |
+| trochlear nerve | 5.9% |
+| Primary somatosensory area, trunk, layer 5 | 6.4% |
+| Interpeduncular nucleus | 6.8% |
+| Rostrolateral area, layer 6b | 9.5% |
+| Midbrain trigeminal nucleus | 12.0% |
+| supraoptic commissures | 12.0% |
+| Posterolateral visual area, layer 6a | 12.8% |
+| Retrosplenial area, lateral agranular part, layer 6b | 14.5% |
+| Primary somatosensory area, unassigned, layer 4 | 15.9% |
+
+Bottom classes are all fine-grained cortical layers and small cranial nerves — consistent with the pixel-count correlation (r=0.794) observed in Run 8a.
+
+### Convergence Assessment
+
+The +6.0% mIoU gain from 100→200 epochs was 3× larger than the predicted +1-2%. This means Run 5 was significantly underfit. At epoch 200, eval loss (0.300) is still declining but the rate of change is slowing. Estimated remaining headroom from further training: +1-3% mIoU (diminishing returns). See [Should We Train Longer?](#should-we-train-longer-300-epochs) below.
+
+### Model Saved
+
+- **DBFS:** `/dbfs/FileStore/allen_brain_data/models/final-200ep`
+- **MLflow:** Run `final-200ep-1328class-20260316-1405`, experiment ID `1345391216675532`
+
+---
+
+## Sliding Window Evaluation — Methodology Finding
+
+Sliding window evaluation is a significant methodological improvement discovered in Run 9.
+
+**Why it matters:**
+- Center-crop eval (518×518 from 800×1140 slices) covers only ~29% of each slice
+- 168 brain structures exist exclusively outside the center crop area
+- All previous runs (1-8a) were evaluated with center-crop, systematically underestimating model quality
+- Sliding window should be the standard evaluation method going forward
+
+**Implementation:** 518×518 tiles, stride 259 (50% overlap), logit averaging in overlap regions, full-resolution argmax. Implemented in `notebooks/finetune_final_200ep.ipynb` Cell 7.
+
+**For human model:** Always evaluate with sliding window. Center-crop can be used as a quick sanity check during training, but final reported metrics should use sliding window.
+
+**Retroactive note:** Run 5's true performance was likely ~73% mIoU sliding window (estimated by adding the ~4% delta). The gap between Runs 5 and 9 in sliding window terms is still substantial.
+
+---
+
+## Should We Train Longer? (300+ Epochs)
+
+**Evidence for:**
+- Eval loss still declining at epoch 200 (0.300)
+- Training loss still declining (0.557)
+- The 100→200 gain (+6.0%) was much larger than predicted, so the 200→300 gain might also surprise
+
+**Evidence against:**
+- Diminishing returns: the loss curve is flattening
+- 23 hours per 200 epochs; a 300-epoch run would be ~34.5 hours
+- The model at 79.1% sliding window mIoU already achieves strong segmentation quality
+- The binding constraint remains data scarcity (1,016 training slices, 657 zero-pixel classes) — more epochs cannot fix absent classes
+- Compute time is better invested in the human model pipeline, which has more unknowns and higher marginal value
+
+**Recommendation:** Do NOT train 300 epochs. The mouse model is complete at 79.1% mIoU (sliding window). The expected +1-3% from 300 epochs does not justify the compute vs. starting human ground truth investigation (Step 8), which is the critical path for the project. If a 300-epoch run is desired later, it can be queued as a low-priority background job.
+
+---
+
 ## Recommendations for Human Model Training
 
 ### Phase 1: Baseline (Priority: HIGH, Cost: LOW)
 
 1. **Start with unfrozen backbone** — Skip the frozen baseline. Go straight to last-4-blocks unfrozen.
-2. **Use Run 5 config exactly** — Same hyperparameters, same augmentation, same loss function.
-3. **Train 200 epochs** — Don't stop at 100 (val loss still declining).
-4. **Use interleaved split** — If slices are sequential. If multi-subject, split by subject.
-5. **Coronal plane only** — Do NOT mix planes in training.
+2. **Use Run 9 config exactly** — Same hyperparameters, same augmentation, same loss function, 200 epochs.
+3. **Use interleaved split** — If slices are sequential. If multi-subject, split by subject.
+4. **Coronal plane only** — Do NOT mix planes in training.
+5. **Evaluate with sliding window** — Do not rely on center-crop metrics.
 
-**Expected mIoU:** Depends on annotation quality and class granularity. If human annotations are for ~50 major structures (vs mouse 1,328), expect higher per-class IoU (70-80%) because classes will be larger.
+**Expected mIoU:** Depends on annotation quality and class granularity. If human annotations are for ~50 major structures (vs mouse 1,328), expect higher per-class IoU (75-85%) because classes will be larger. If ~500+ structures, expect 70-75% with 200 epochs.
 
 ### Phase 2: Model Initialization (Priority: MEDIUM, Cost: LOW)
 
 Test whether initializing from mouse weights helps:
 
 ```python
-# Load mouse Run 5 checkpoint
+# Load mouse Run 9 checkpoint (final 200-epoch model)
 base_model = UperNetForSemanticSegmentation.from_pretrained(
-    "/dbfs/FileStore/allen_brain_data/models/unfrozen"
+    "/dbfs/FileStore/allen_brain_data/models/final-200ep"
 )
 
 # Reinitialize the output projection layer for new num_labels
@@ -368,11 +483,11 @@ base_model = UperNetForSemanticSegmentation.from_pretrained(
 
 ### Phase 4: Advanced Techniques (Priority: LOW, Cost: MEDIUM)
 
-Only pursue these if baseline human model plateaus below 65% mIoU:
+Only pursue these if baseline human model plateaus below 70% mIoU (sliding window):
 
-1. **Sliding window evaluation** — Use overlapping crops at inference time (no retraining needed). May recover 1-3% mIoU if structures near image edges are being missed.
-2. **Higher resolution crops** — 518×518 → 768×768. Requires more GPU memory (reduce batch size to 1, use grad accumulation).
-3. **Unfreeze more blocks** — Last 4 → last 6 or last 8. Increases trainable params but may improve domain adaptation.
+1. **Higher resolution crops** — 518×518 → 768×768. Requires more GPU memory (reduce batch size to 1, use grad accumulation).
+2. **Unfreeze more blocks** — Last 4 → last 6 or last 8. Increases trainable params but may improve domain adaptation.
+3. **300+ epochs** — If eval loss is still declining at 200. Diminishing returns expected.
 
 ---
 
@@ -387,19 +502,21 @@ Only pursue these if baseline human model plateaus below 65% mIoU:
 **Next steps for human team:**
 - Confirm ground truth exists and is accessible (Step 8 of step12_plan.md)
 - Download and preprocess human data (Step 9)
-- Run baseline training with Run 5 config (Step 10)
+- Run baseline training with Run 9 config (Step 10)
 - Compare mouse-init vs random-init
 
 ---
 
 ## Metrics for Success
 
-### Mouse Model (Final — Run 9)
+### Mouse Model (Final — Run 9) — ACHIEVED
 
-Target metrics for the 200-epoch run:
-- **mIoU:** 70-72% (current 68.8% + expected 1-2% from more epochs)
-- **Pixel accuracy:** 92.5%+ (already achieved)
-- **Per-class IoU:** 424/503 classes ≥0.5 IoU (84% of valid classes)
+| Metric | Target | Achieved | Status |
+|--------|--------|----------|--------|
+| mIoU (center-crop) | 70-72% | **74.8%** | Exceeded |
+| mIoU (sliding window) | — | **79.1%** | New metric |
+| Pixel accuracy | 92.5%+ | **94.1% / 96.9%** | Exceeded |
+| Valid classes | 503 | **503 CC / 671 SW** | +168 (SW) |
 
 ### Human Model (Target)
 
@@ -416,16 +533,38 @@ Success criteria depend on annotation granularity:
 
 ---
 
+## Complete Training History
+
+| Run | Config | mIoU (CC) | mIoU (SW) | Accuracy (CC) | Runtime | Notebook |
+|-----|--------|-----------|-----------|---------------|---------|----------|
+| 1 | Coarse 6-class, frozen, spatial split | 50.7% | — | 78.8% | 23 min | `finetune_coarse.ipynb` |
+| 2 | Coarse 6-class, frozen, interleaved | 88.0% | — | 95.8% | 23 min | `finetune_coarse.ipynb` |
+| 3 | Depth-2 19-class, frozen | 69.6% | — | 95.5% | 25 min | `finetune_depth2.ipynb` |
+| 4 | Full 1,328-class, frozen | 60.3% | — | 88.9% | 5.5 hrs | `finetune_full.ipynb` |
+| 5 | Full 1,328-class, unfrozen, 100ep | 68.8% | — | 92.5% | 11.3 hrs | `finetune_unfrozen.ipynb` |
+| 6 | Full 1,328-class, weighted Dice+CE | 67.2% | — | 89.7% | ~33 hrs | `finetune_weighted_loss.ipynb` |
+| 7 | Full 1,328-class, extended augmentation | 62.3% | — | 90.1% | ~11-14 hrs | `finetune_augmented.ipynb` |
+| TTA | Eval-only: 6-variant TTA on Run 5 | 44.4% | — | 84.4% | ~20 min | `eval_tta.ipynb` |
+| 8a | Pruned 673-class, unfrozen, coronal-only | 69.0% | — | 92.4% | ~9.5 hrs | `finetune_pruned_ablation.ipynb` |
+| **9** | **Full 1,328-class, unfrozen, 200ep** | **74.8%** | **79.1%** | **94.1% / 96.9%** | **23.0 hrs** | **`finetune_final_200ep.ipynb`** |
+
+All model dirs under `/dbfs/FileStore/allen_brain_data/models/`. Final model: **`final-200ep`**.
+
+---
+
 ## Conclusion
 
-The mouse model experiments establish a clear recipe:
+The mouse model experiments (9 training runs + 2 eval-only experiments) establish a clear, proven recipe:
 - **Architecture:** DINOv2-Large + UperNet (proven to work)
-- **Training:** Unfrozen backbone, plain CE loss, baseline augmentation, 200 epochs
+- **Training:** Unfrozen backbone (last 4 blocks), plain CE loss, baseline augmentation, 200 epochs
 - **Data:** Coronal plane only, interleaved split, 518×518 crops
+- **Evaluation:** Sliding window (518×518 tiles, stride 259) for accurate metrics
 - **Constraints:** Batch ≥2, drop_last=True, DDP unused params, gradient checkpointing
 
-Three experiments tried to improve on the baseline (weighted loss, extended augmentation, class pruning) and all failed. The performance ceiling is determined by dataset characteristics (class pixel counts, training set size), not model capacity.
+**Final mouse model: 79.1% mIoU (sliding window), 96.9% accuracy, 671 valid classes out of 1,328.**
 
-**For human model:** Start with this exact config and only deviate if baseline results warrant it. The most important unknowns are ground truth quality and annotation density — these will dominate model performance more than any architectural choice.
+The two most impactful interventions were backbone unfreezing (+8.5%) and extended training to 200 epochs (+6.0%). Three experiments tried to improve on the unfrozen baseline (weighted loss, extended augmentation, class pruning) and all failed. The performance ceiling is determined by dataset characteristics (class pixel counts, training set size), not model capacity or training tricks.
 
-All code, notebooks, and full experimental results are in this repo. Run 9 (200 epochs) is the final mouse model. After that, pivot to human data collection and training.
+**For human model:** Start with this exact config (Run 9) and only deviate if baseline results warrant it. The most important unknowns are ground truth quality and annotation density — these will dominate model performance more than any architectural choice.
+
+**Next step:** Pivot to human ground truth investigation (Step 8 of step12_plan.md). The mouse model is complete.

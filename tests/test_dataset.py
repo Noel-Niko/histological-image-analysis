@@ -444,6 +444,65 @@ class TestMultiAxisDataset:
             assert item["labels"].dtype == torch.long
 
 
+class TestBigBrainSlicerCompat:
+    """Test that BigBrainSlicer works with BrainSegmentationDataset (Step 3B)."""
+
+    @pytest.fixture
+    def bigbrain_slicer(self):
+        """Create a BigBrainSlicer from synthetic arrays."""
+        from histological_image_analysis.bigbrain_slicer import BigBrainSlicer
+        image = np.ones((20, 16, 24), dtype=np.uint8) * 128
+        annotation = np.zeros((20, 16, 24), dtype=np.uint8)
+        annotation[2:18, 2:14, 2:22] = 1  # Gray Matter
+        annotation[6:14, 4:12, 4:20] = 2  # White Matter
+        return BigBrainSlicer.from_arrays(image, annotation)
+
+    @pytest.fixture
+    def bigbrain_mapping(self):
+        """Identity mapping for 9-class tissue labels."""
+        return {i: i for i in range(10)}
+
+    def test_bigbrain_slicer_creates_dataset(
+        self, bigbrain_slicer, bigbrain_mapping
+    ):
+        """BigBrainSlicer should be accepted by BrainSegmentationDataset."""
+        ds = BrainSegmentationDataset(
+            bigbrain_slicer, "train", bigbrain_mapping,
+            crop_size=16, augment=False,
+            split_strategy="interleaved",
+        )
+        assert len(ds) > 0
+
+    def test_bigbrain_slicer_getitem_valid(
+        self, bigbrain_slicer, bigbrain_mapping
+    ):
+        """Items from BigBrainSlicer dataset should have correct format."""
+        ds = BrainSegmentationDataset(
+            bigbrain_slicer, "train", bigbrain_mapping,
+            crop_size=16, augment=False,
+            split_strategy="interleaved",
+        )
+        item = ds[0]
+        assert item["pixel_values"].shape == (3, 16, 16)
+        assert item["labels"].shape == (16, 16)
+        assert item["pixel_values"].dtype == torch.float32
+        assert item["labels"].dtype == torch.long
+
+    def test_bigbrain_slicer_labels_in_range(
+        self, bigbrain_slicer, bigbrain_mapping
+    ):
+        """Labels should be valid 9-class tissue IDs."""
+        ds = BrainSegmentationDataset(
+            bigbrain_slicer, "train", bigbrain_mapping,
+            crop_size=16, augment=False,
+            split_strategy="interleaved",
+        )
+        for i in range(len(ds)):
+            item = ds[i]
+            assert item["labels"].min() >= 0
+            assert item["labels"].max() <= 9
+
+
 class TestNormalization:
     """Test ImageNet normalization is applied correctly."""
 

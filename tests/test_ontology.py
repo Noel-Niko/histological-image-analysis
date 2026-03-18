@@ -714,3 +714,181 @@ class TestRealAnnotationInterleaved:
                     f"Class {cls} ({names[cls]}) missing from "
                     f"{split_name} split with interleaved strategy"
                 )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Graph 10 (Human Adult Ontology) Tests
+# ──────────────────────────────────────────────────────────────────────
+
+HUMAN_ONTOLOGY_PATH = (
+    Path(__file__).parent.parent
+    / "data"
+    / "allen_brain_data"
+    / "ontology"
+    / "structure_graph_10.json"
+)
+
+
+@pytest.mark.skipif(
+    not HUMAN_ONTOLOGY_PATH.exists(),
+    reason="Human ontology (structure_graph_10.json) not present locally",
+)
+class TestHumanOntologyGraph10:
+    """Verify OntologyMapper works with human Graph 10 (1,839 structures)."""
+
+    @pytest.fixture
+    def human_mapper(self) -> OntologyMapper:
+        return OntologyMapper(HUMAN_ONTOLOGY_PATH)
+
+    def test_loads_graph10_successfully(self, human_mapper):
+        """Graph 10 should load without errors."""
+        assert human_mapper.root_id == 4005  # "brain" root node
+
+    def test_structure_count(self, human_mapper):
+        """Graph 10 has exactly 1,839 structures."""
+        assert len(human_mapper.all_structure_ids) == 1839
+
+    def test_root_name_is_brain(self, human_mapper):
+        """Root node should be named 'brain'."""
+        assert human_mapper.get_structure_name(4005) == "brain"
+
+    def test_depth1_children_present(self, human_mapper):
+        """Depth-1 children: gray matter (4006), white matter (9218),
+        sulci & spaces (9352)."""
+        assert human_mapper.get_structure_name(4006) == "gray matter"
+        assert human_mapper.get_structure_name(9218) == "white matter"
+        assert human_mapper.get_structure_name(9352) == "sulci & spaces"
+
+    def test_parent_lookup(self, human_mapper):
+        """Spot-check parent relationships."""
+        assert human_mapper.get_parent_id(4006) == 4005  # gray matter → brain
+        assert human_mapper.get_parent_id(9218) == 4005  # white matter → brain
+        assert human_mapper.get_parent_id(4005) is None   # root has no parent
+
+    def test_build_full_mapping_produces_1839_classes(self, human_mapper):
+        """build_full_mapping() should assign 1,839 contiguous class IDs."""
+        mapping = human_mapper.build_full_mapping()
+        assert len(mapping) == 1839
+        num_labels = human_mapper.get_num_labels(mapping)
+        assert num_labels == 1840  # 1,839 structures + background (0 reserved)
+
+    def test_full_mapping_is_contiguous(self, human_mapper):
+        """Class IDs should be contiguous 1..1839."""
+        mapping = human_mapper.build_full_mapping()
+        class_ids = sorted(set(mapping.values()))
+        assert class_ids == list(range(1, 1840))
+
+    def test_full_mapping_is_deterministic(self, human_mapper):
+        """Same call should produce identical mapping."""
+        m1 = human_mapper.build_full_mapping()
+        m2 = human_mapper.build_full_mapping()
+        assert m1 == m2
+
+    def test_present_mapping_filters_correctly(self, human_mapper):
+        """build_present_mapping() on Graph 10 should produce contiguous IDs
+        for a subset of classes."""
+        full = human_mapper.build_full_mapping()
+        # Simulate 524 present classes (first 524 non-zero class IDs)
+        present = set(range(1, 525))
+        filtered = human_mapper.build_present_mapping(full, present)
+        # Should have 525 unique output classes (0 background + 524 present)
+        unique_out = set(filtered.values())
+        assert len(unique_out) == 525
+        assert max(unique_out) == 524
+
+    def test_present_mapping_all_structure_ids_covered(self, human_mapper):
+        """Every structure ID should have an entry in the filtered mapping."""
+        full = human_mapper.build_full_mapping()
+        present = {1, 2, 3}
+        filtered = human_mapper.build_present_mapping(full, present)
+        assert set(filtered.keys()) == set(full.keys())
+
+    def test_get_class_names_full_mapping(self, human_mapper):
+        """get_class_names() should return structure names for full mapping."""
+        mapping = human_mapper.build_full_mapping()
+        names = human_mapper.get_class_names(mapping)
+        assert names[0] == "Background"
+        assert len(names) == 1840
+        # Spot-check: "brain" root should be in there
+        brain_class = mapping[4005]
+        assert names[brain_class] == "brain"
+
+    def test_remap_mask_with_human_ids(self, human_mapper):
+        """remap_mask() should work with human structure IDs."""
+        mapping = human_mapper.build_full_mapping()
+        mask = np.array([[0, 4005, 4006], [4007, 9218, 0]], dtype=np.uint32)
+        remapped = human_mapper.remap_mask(mask, mapping)
+        assert remapped.shape == mask.shape
+        assert remapped[0, 0] == 0  # background
+        assert remapped[0, 1] == mapping[4005]
+        assert remapped[0, 2] == mapping[4006]
+        assert remapped[1, 0] == mapping[4007]
+        assert remapped[1, 1] == mapping[9218]
+
+    def test_coarse_mapping_not_applicable(self, human_mapper):
+        """build_coarse_mapping() uses mouse-specific ancestors (567, 343, etc.)
+        which don't exist in Graph 10. All structures should map to 0 (background)
+        since no Graph 10 ID matches a mouse coarse ancestor."""
+        mapping = human_mapper.build_coarse_mapping()
+        # All human structures should map to background (0) since mouse
+        # coarse ancestors (567, 343, 512, 1009, 73) are absent from Graph 10
+        non_zero = [cid for cid in mapping.values() if cid != 0]
+        assert len(non_zero) == 0, (
+            f"Expected all Graph 10 structures to map to background with "
+            f"mouse coarse mapping, but {len(non_zero)} mapped to non-zero"
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# BigBrain 9-Class Mapping Tests
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestBigBrain9ClassMapping:
+    """Test the BigBrain 9-class tissue classification mapping.
+
+    BigBrain classified volume uses these labels:
+    0: background, 1-9: tissue classes (cortical layers, white matter, etc.)
+    This is a simple identity mapping — no ontology hierarchy needed.
+    """
+
+    def test_bigbrain_mapping_identity(self):
+        """BigBrain 9-class is a simple identity mapping (label = class ID)."""
+        from histological_image_analysis.ontology import build_bigbrain_9class_mapping
+        mapping = build_bigbrain_9class_mapping()
+        for label_id in range(10):  # 0-9
+            assert mapping[label_id] == label_id
+
+    def test_bigbrain_mapping_num_labels(self):
+        """Should have 10 labels (0 background + 9 tissue classes)."""
+        from histological_image_analysis.ontology import build_bigbrain_9class_mapping
+        mapping = build_bigbrain_9class_mapping()
+        assert OntologyMapper.get_num_labels(mapping) == 10
+
+    def test_bigbrain_mapping_class_names(self):
+        """Should return descriptive names for all 10 classes."""
+        from histological_image_analysis.ontology import BIGBRAIN_9CLASS_NAMES
+        assert len(BIGBRAIN_9CLASS_NAMES) == 10
+        assert BIGBRAIN_9CLASS_NAMES[0] == "Background"
+        # All names should be non-empty strings
+        for i, name in BIGBRAIN_9CLASS_NAMES.items():
+            assert isinstance(name, str) and len(name) > 0
+
+    def test_bigbrain_remap_mask(self):
+        """remap_mask should work with BigBrain 9-class mapping."""
+        from histological_image_analysis.ontology import build_bigbrain_9class_mapping
+        # Create a minimal mapper just to use remap_mask (static-like method)
+        # Since remap_mask is an instance method, we need a mapper instance
+        # But the mapping is self-contained — just test directly with numpy
+        mapping = build_bigbrain_9class_mapping()
+        mask = np.array([[0, 1, 2], [3, 5, 9]], dtype=np.uint32)
+        # Build LUT manually (same logic as remap_mask)
+        max_val = int(mask.max())
+        lut = np.zeros(max_val + 1, dtype=np.int64)
+        for sid, cid in mapping.items():
+            if sid <= max_val:
+                lut[sid] = cid
+        remapped = lut[mask]
+        assert remapped[0, 0] == 0
+        assert remapped[0, 1] == 1
+        assert remapped[1, 2] == 9

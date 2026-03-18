@@ -1342,6 +1342,7 @@ dependencies = [
     { name = "accelerate" },
     { name = "huggingface-hub" },
     { name = "matplotlib" },
+    { name = "nibabel" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "pynrrd" },
@@ -1379,6 +1380,7 @@ requires-dist = [
     { name = "jupyterlab", marker = "extra == 'exploration'", specifier = ">=4.5.5" },
     { name = "kagglehub", marker = "extra == 'exploration'", specifier = ">=1.0.0" },
     { name = "matplotlib", specifier = ">=3.5" },
+    { name = "nibabel", specifier = ">=5.0" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pydicom", marker = "extra == 'exploration'", specifier = "==2.4.4" },
@@ -1504,6 +1506,15 @@ dependencies = [
 sdist = { url = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/packages/packages/a3/6f/606be632e37bf8d05b253e8626c2291d74c691ddc7bcdf7d6aaf33b32f6a/imageio-2.37.2.tar.gz", hash = "sha256:0212ef2727ac9caa5ca4b2c75ae89454312f440a756fcfc8ef1993e718f50f8a" }
 wheels = [
     { url = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/packages/packages/fb/fe/301e0936b79bcab4cacc7548bf2853fc28dced0a578bab1f7ef53c9aa75b/imageio-2.37.2-py3-none-any.whl", hash = "sha256:ad9adfb20335d718c03de457358ed69f141021a333c40a53e57273d8a5bd0b9b" },
+]
+
+[[package]]
+name = "importlib-resources"
+version = "6.5.2"
+source = { registry = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/simple" }
+sdist = { url = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/packages/packages/cf/8c/f834fbf984f691b4f7ff60f50b514cc3de5cc08abfc3295564dd89c5e2e7/importlib_resources-6.5.2.tar.gz", hash = "sha256:185f87adef5bcc288449d98fb4fba07cea78bc036455dd44c5fc4a2fe78fed2c" }
+wheels = [
+    { url = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/packages/packages/a4/ed/1f1afb2e9e7f38a545d628f864d562a5ae64fe6f7a10e28ffb9b185b4e89/importlib_resources-6.5.2-py3-none-any.whl", hash = "sha256:789cfdc3ed28c78b67a06acb8126751ced69a3d5f79c095a98298cd8a760ccec" },
 ]
 
 [[package]]
@@ -2573,6 +2584,21 @@ source = { registry = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-sh
 sdist = { url = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/packages/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz", hash = "sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509" }
 wheels = [
     { url = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/packages/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl", hash = "sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762" },
+]
+
+[[package]]
+name = "nibabel"
+version = "5.4.2"
+source = { registry = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/simple" }
+dependencies = [
+    { name = "importlib-resources", marker = "python_full_version < '3.12'" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/packages/packages/a3/01/3d2cc510c616bc8e27be17a063070d9126f69407961594a9ae734ea51121/nibabel-5.4.2.tar.gz", hash = "sha256:d5f4b9076a13178ae7f7acf18c8dbd503ee1c4d5c0c23b85df7be87efcbb49da" }
+wheels = [
+    { url = "https://graingerinc.jfrog.io/artifactory/api/pypi/pypi-shared-virtual/packages/packages/3b/d7/601b6396b33536811668935faa790112266c70661be94555999be431f86f/nibabel-5.4.2-py3-none-any.whl", hash = "sha256:553482c5f1e1034fc312edf6fb7f32236c0056439845d1c29293b7e8c98d4854" },
 ]
 
 [[package]]

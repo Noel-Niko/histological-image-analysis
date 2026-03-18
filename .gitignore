@@ -1,6 +1,9 @@
 # Downloaded data (binary, ~3 GB+)
 data/
 
+# Generated figures (reproducible from scripts/generate_paper_figures.py)
+figures/
+
 # Trained models (too large for GitHub - use MLflow or model registry)
 models/
 *.safetensors

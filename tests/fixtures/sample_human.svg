@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">
+  <g transform="scale(1.0)">
+    <g id="1001" order="0" graphic_group_label_id="1" graphic_group_label="Default" sub_image_id="12345">
+    </g>
+    <g id="1002" order="1" graphic_group_label_id="4" graphic_group_label="Non-sampled" sub_image_id="12345">
+      <polygon id="p1" structure_id="4039" points="10,10,90,10,90,50,10,50" style="fill:#FF0000"/>
+      <polygon id="p2" structure_id="4045" points="110,10,190,10,190,50,110,50" style="fill:#00FF00"/>
+      <polygon id="p3" structure_id="" points="10,60,90,60,90,90,10,90" style="fill:#0000FF"/>
+    </g>
+    <g id="1003" order="2" graphic_group_label_id="26" graphic_group_label="Spaces" sub_image_id="12345">
+      <polygon id="p4" structure_id="9366" points="110,60,190,60,190,90,110,90" style="fill:#FFFF00"/>
+      <polygon id="p5" structure_id="9364" points="50,30,150,30,150,70,50,70" style="fill:#FF00FF"/>
+    </g>
+  </g>
+</svg>

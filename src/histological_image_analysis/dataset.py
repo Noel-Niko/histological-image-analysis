@@ -1,12 +1,13 @@
-"""PyTorch Dataset for brain structure segmentation.
+"""PyTorch Datasets for brain structure segmentation.
 
-Wraps CCFv3Slicer to provide (pixel_values, labels) pairs suitable
-for DINOv2 + UperNet semantic segmentation training.
+Wraps volume slicers and image+SVG pairs to provide (pixel_values, labels)
+pairs suitable for DINOv2 + UperNet semantic segmentation training.
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -14,8 +15,6 @@ import torch
 from PIL import Image
 from scipy.ndimage import gaussian_filter, map_coordinates
 from torch.utils.data import Dataset
-
-from histological_image_analysis.ccfv3_slicer import CCFv3Slicer
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +31,11 @@ class BrainSegmentationDataset(Dataset):
 
     Parameters
     ----------
-    slicer : CCFv3Slicer
-        Volume slicer providing (image, mask) pairs.
+    slicer : object
+        Volume slicer providing (image, mask) pairs via ``iter_slices()``.
+        Must implement ``iter_slices(split, mapping, split_strategy=...,
+        multi_axis=...) → Iterator[tuple[ndarray, ndarray]]``.
+        Compatible with both ``CCFv3Slicer`` and ``BigBrainSlicer``.
     split : str
         One of "train", "val", "test".
     mapping : dict
@@ -51,7 +53,7 @@ class BrainSegmentationDataset(Dataset):
 
     def __init__(
         self,
-        slicer: CCFv3Slicer,
+        slicer: Any,
         split: str,
         mapping: dict[int, int],
         crop_size: int = 518,
@@ -320,6 +322,269 @@ class BrainSegmentationDataset(Dataset):
         img_3ch = np.stack([img_float, img_float, img_float], axis=0)
 
         # ImageNet normalize each channel
+        for c in range(3):
+            img_3ch[c] = (img_3ch[c] - IMAGENET_MEAN[c]) / IMAGENET_STD[c]
+
+        return torch.from_numpy(img_3ch)
+
+
+def split_by_donor(
+    pairs: list[tuple[Path, Path, str]],
+    train_donors: list[str],
+    val_donors: list[str],
+    test_donors: list[str],
+) -> dict[str, list[tuple[Path, Path]]]:
+    """Split (image, svg, donor) triples by donor into train/val/test.
+
+    Parameters
+    ----------
+    pairs : list of (image_path, svg_path, donor_id) triples
+        All annotated image-SVG pairs with their donor ID.
+    train_donors : list of str
+        Donor IDs for training.
+    val_donors : list of str
+        Donor IDs for validation.
+    test_donors : list of str
+        Donor IDs for testing.
+
+    Returns
+    -------
+    dict with keys "train", "val", "test", each a list of (image, svg) tuples.
+    """
+    train_set = set(train_donors)
+    val_set = set(val_donors)
+    test_set = set(test_donors)
+
+    splits: dict[str, list[tuple[Path, Path]]] = {
+        "train": [],
+        "val": [],
+        "test": [],
+    }
+
+    for image_path, svg_path, donor_id in pairs:
+        if donor_id in train_set:
+            splits["train"].append((image_path, svg_path))
+        elif donor_id in val_set:
+            splits["val"].append((image_path, svg_path))
+        elif donor_id in test_set:
+            splits["test"].append((image_path, svg_path))
+
+    logger.info(
+        "Donor split: train=%d (%s), val=%d (%s), test=%d (%s)",
+        len(splits["train"]),
+        train_donors,
+        len(splits["val"]),
+        val_donors,
+        len(splits["test"]),
+        test_donors,
+    )
+    return splits
+
+
+class AllenHumanDataset(Dataset):
+    """PyTorch Dataset for Allen Human Brain SVG-annotated sections.
+
+    Lazy-loads RGB images from disk and rasterizes SVG annotations on each
+    ``__getitem__()`` call. Uses ``sparse=True`` so unlabeled pixels are
+    255 (ignored by ``CrossEntropyLoss(ignore_index=255)``).
+
+    Parameters
+    ----------
+    image_svg_pairs : list of (image_path, svg_path)
+        Pairs of paths to JPEG images and SVG annotation files.
+    rasterizer : SVGRasterizer
+        SVG rasterizer instance.
+    mapping : dict
+        Structure ID → class ID mapping. Structure IDs not in the mapping
+        are mapped to 0. Pixels with value 255 (unlabeled) are preserved.
+    crop_size : int
+        Output spatial size (default 518 for DINOv2).
+    augment : bool
+        Whether to apply random augmentation (training only).
+    """
+
+    def __init__(
+        self,
+        image_svg_pairs: list[tuple[Path, Path]],
+        rasterizer: Any,
+        mapping: dict[int, int],
+        crop_size: int = 518,
+        augment: bool = True,
+    ) -> None:
+        self._pairs = image_svg_pairs
+        self._rasterizer = rasterizer
+        self._mapping = mapping
+        self._crop_size = crop_size
+        self._augment = augment
+
+        # Build LUT for structure ID → class ID remapping
+        # Preserves 255 as ignore_index
+        if mapping:
+            max_sid = max(max(mapping.keys()), 255)
+        else:
+            max_sid = 255
+        self._lut = np.zeros(max_sid + 1, dtype=np.int64)
+        for sid, cid in mapping.items():
+            if sid <= max_sid:
+                self._lut[sid] = cid
+        self._lut[255] = 255  # preserve ignore_index
+
+        logger.info(
+            "AllenHumanDataset: %d pairs, crop_size=%d, augment=%s",
+            len(self._pairs),
+            crop_size,
+            augment,
+        )
+
+    def __len__(self) -> int:
+        return len(self._pairs)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        image_path, svg_path = self._pairs[idx]
+
+        # Load RGB image
+        img = Image.open(image_path).convert("RGB")
+        image = np.array(img)  # (H, W, 3) uint8
+
+        h, w = image.shape[:2]
+
+        # Rasterize SVG to mask (sparse: unlabeled=255, annotated=structure_id)
+        raw_mask = self._rasterizer.rasterize(
+            svg_path, target_width=w, target_height=h, sparse=True,
+        )
+
+        # Remap structure IDs to class IDs, preserving 255
+        mask = self._lut[raw_mask]
+
+        # Pad if needed
+        image, mask = self._pad_if_needed(image, mask)
+
+        # Crop
+        if self._augment:
+            image, mask = self._random_crop(image, mask)
+        else:
+            image, mask = self._center_crop(image, mask)
+
+        # Augmentation (training only)
+        if self._augment:
+            image, mask = self._apply_augmentation(image, mask)
+
+        # Normalize RGB → (3, H, W) float tensor
+        pixel_values = self._normalize_rgb(image)
+
+        return {
+            "pixel_values": pixel_values,
+            "labels": torch.from_numpy(mask.copy()).long(),
+        }
+
+    def _pad_if_needed(
+        self, image: np.ndarray, mask: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Pad image and mask to at least crop_size in both dimensions.
+
+        Image is padded with 0 (black). Mask is padded with 255 (ignore).
+        """
+        h, w = image.shape[:2]
+        pad_h = max(0, self._crop_size - h)
+        pad_w = max(0, self._crop_size - w)
+
+        if pad_h == 0 and pad_w == 0:
+            return image, mask
+
+        pad_top = pad_h // 2
+        pad_bottom = pad_h - pad_top
+        pad_left = pad_w // 2
+        pad_right = pad_w - pad_left
+
+        image = np.pad(
+            image,
+            ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)),
+            mode="constant",
+            constant_values=0,
+        )
+        mask = np.pad(
+            mask,
+            ((pad_top, pad_bottom), (pad_left, pad_right)),
+            mode="constant",
+            constant_values=255,
+        )
+        return image, mask
+
+    def _random_crop(
+        self, image: np.ndarray, mask: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Random crop to crop_size x crop_size."""
+        h, w = image.shape[:2]
+        top = np.random.randint(0, h - self._crop_size + 1)
+        left = np.random.randint(0, w - self._crop_size + 1)
+        return (
+            image[top : top + self._crop_size, left : left + self._crop_size],
+            mask[top : top + self._crop_size, left : left + self._crop_size],
+        )
+
+    def _center_crop(
+        self, image: np.ndarray, mask: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Center crop to crop_size x crop_size."""
+        h, w = image.shape[:2]
+        top = (h - self._crop_size) // 2
+        left = (w - self._crop_size) // 2
+        return (
+            image[top : top + self._crop_size, left : left + self._crop_size],
+            mask[top : top + self._crop_size, left : left + self._crop_size],
+        )
+
+    def _apply_augmentation(
+        self, image: np.ndarray, mask: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Apply baseline augmentation to RGB image and mask.
+
+        Uses ignore_index=255 as fill value for mask (not 0) to avoid
+        teaching the model that rotated borders are annotated background.
+
+        1. Horizontal flip (50%)
+        2. Rotation ±15° (mask filled with 255)
+        3. Color jitter (brightness ±0.2, contrast ±0.2)
+        """
+        # 1. Horizontal flip
+        if np.random.random() < 0.5:
+            image = np.flip(image, axis=1).copy()
+            mask = np.flip(mask, axis=1).copy()
+
+        # 2. Rotation ±15°
+        angle = np.random.uniform(-15, 15)
+        if abs(angle) > 0.5:
+            img_pil = Image.fromarray(image)
+            image = np.array(
+                img_pil.rotate(angle, resample=Image.BILINEAR, fillcolor=0)
+            )
+            mask_pil = Image.fromarray(mask.astype(np.int32), mode="I")
+            mask = np.array(
+                mask_pil.rotate(
+                    angle, resample=Image.NEAREST, fillcolor=255,
+                )
+            ).astype(np.int64)
+
+        # 3. Color jitter (image only)
+        image = image.astype(np.float32)
+        brightness = 1.0 + np.random.uniform(-0.2, 0.2)
+        contrast = 1.0 + np.random.uniform(-0.2, 0.2)
+        image = image * contrast + (brightness - 1.0) * 128
+        image = np.clip(image, 0, 255).astype(np.uint8)
+
+        return image, mask
+
+    @staticmethod
+    def _normalize_rgb(image: np.ndarray) -> torch.Tensor:
+        """Convert uint8 RGB to normalized 3-channel float tensor.
+
+        1. uint8 [0, 255] → float32 [0, 1]
+        2. Transpose (H, W, 3) → (3, H, W)
+        3. Apply ImageNet normalization per channel
+        """
+        img_float = image.astype(np.float32) / 255.0
+        img_3ch = np.transpose(img_float, (2, 0, 1))  # (3, H, W)
+
         for c in range(3):
             img_3ch[c] = (img_3ch[c] - IMAGENET_MEAN[c]) / IMAGENET_STD[c]
 
