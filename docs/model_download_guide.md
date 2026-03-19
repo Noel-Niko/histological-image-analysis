@@ -277,7 +277,10 @@ python scripts/run_inference.py --image path/to/brain_slice.jpg --output results
 # 3. Or batch process a directory of images
 python scripts/run_inference.py --image-dir images/ --output results/
 
-# 4. Force CPU if no GPU available
+# 4. Full-resolution tiled inference (sliding window)
+python scripts/run_inference.py --image image.jpg --output results/ --sliding-window
+
+# 5. Force CPU if no GPU available
 python scripts/run_inference.py --image image.png --output results/ --cpu
 ```
 
@@ -349,6 +352,10 @@ prediction_np = prediction.cpu().numpy()
 print(f"Input image size: {image.size}")
 print(f"Prediction shape: {prediction_np.shape}")
 print(f"Unique predicted classes: {len(np.unique(prediction_np))}")
+
+# Access class names via model config
+class_name = model.config.id2label.get(str(prediction_np[100, 100]), "unknown")
+print(f"Class at (100, 100): {class_name}")
 
 # Visualize (optional)
 import matplotlib.pyplot as plt

@@ -303,6 +303,154 @@ class TestAllenHumanAugmentation:
             assert 255 in labels.numpy()
 
 
+class TestAllenHumanCache:
+    """Test pre-cache build and cached loading."""
+
+    def test_build_cache_creates_npz_files(
+        self, image_svg_pairs, mock_rasterizer, human_mapping, tmp_path,
+    ):
+        """build_cache should create one .npz file per pair."""
+        cache_dir = tmp_path / "cache"
+        count = AllenHumanDataset.build_cache(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            cache_dir=cache_dir,
+            max_dim=64,
+        )
+        # All 5 pairs share the same image stem, so only 1 unique file
+        assert count == 5
+        npz_files = list(cache_dir.glob("*.npz"))
+        assert len(npz_files) == 1
+
+    def test_build_cache_npz_contents(
+        self, image_svg_pairs, mock_rasterizer, human_mapping, tmp_path,
+    ):
+        """Cached .npz should contain image (H,W,3) and mask (H,W)."""
+        cache_dir = tmp_path / "cache"
+        AllenHumanDataset.build_cache(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            cache_dir=cache_dir,
+            max_dim=64,
+        )
+        npz_file = list(cache_dir.glob("*.npz"))[0]
+        data = np.load(npz_file)
+        assert "image" in data
+        assert "mask" in data
+        assert data["image"].ndim == 3  # (H, W, 3)
+        assert data["image"].shape[2] == 3
+        assert data["mask"].ndim == 2  # (H, W)
+
+    def test_build_cache_resizes_large_images(
+        self, image_svg_pairs, mock_rasterizer, human_mapping, tmp_path,
+    ):
+        """Images larger than max_dim should be resized."""
+        cache_dir = tmp_path / "cache"
+        AllenHumanDataset.build_cache(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            cache_dir=cache_dir,
+            max_dim=64,
+        )
+        npz_file = list(cache_dir.glob("*.npz"))[0]
+        data = np.load(npz_file)
+        h, w = data["image"].shape[:2]
+        assert max(h, w) <= 64
+
+    def test_build_cache_skips_existing(
+        self, image_svg_pairs, mock_rasterizer, human_mapping, tmp_path,
+    ):
+        """build_cache should skip files that already exist."""
+        cache_dir = tmp_path / "cache"
+        AllenHumanDataset.build_cache(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            cache_dir=cache_dir,
+            max_dim=64,
+        )
+        # Second call should skip (no rasterizer calls)
+        mock_rasterizer_2 = MagicMock()
+        count = AllenHumanDataset.build_cache(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer_2,
+            mapping=human_mapping,
+            cache_dir=cache_dir,
+            max_dim=64,
+        )
+        assert count == 5
+        # Rasterizer should not have been called (all files exist)
+        mock_rasterizer_2.rasterize.assert_not_called()
+
+    def test_cached_dataset_returns_correct_shapes(
+        self, image_svg_pairs, mock_rasterizer, human_mapping, tmp_path,
+    ):
+        """Dataset with cache_dir should return same shapes as uncached."""
+        cache_dir = tmp_path / "cache"
+        AllenHumanDataset.build_cache(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            cache_dir=cache_dir,
+            max_dim=128,
+        )
+        ds = AllenHumanDataset(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            crop_size=64,
+            augment=False,
+            cache_dir=cache_dir,
+        )
+        item = ds[0]
+        assert item["pixel_values"].shape == (3, 64, 64)
+        assert item["labels"].shape == (64, 64)
+
+    def test_cached_dataset_contains_mapped_labels(
+        self, image_svg_pairs, mock_rasterizer, human_mapping, tmp_path,
+    ):
+        """Cached dataset labels should have class IDs, not structure IDs."""
+        cache_dir = tmp_path / "cache"
+        AllenHumanDataset.build_cache(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            cache_dir=cache_dir,
+            max_dim=128,
+        )
+        ds = AllenHumanDataset(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            crop_size=64,
+            augment=False,
+            cache_dir=cache_dir,
+        )
+        item = ds[0]
+        unique = set(item["labels"].numpy().ravel())
+        assert 4039 not in unique
+        assert 4045 not in unique
+
+    def test_cached_mask_preserves_255(
+        self, image_svg_pairs, mock_rasterizer, human_mapping, tmp_path,
+    ):
+        """Cached masks should preserve 255 (ignore_index)."""
+        cache_dir = tmp_path / "cache"
+        AllenHumanDataset.build_cache(
+            image_svg_pairs=image_svg_pairs,
+            rasterizer=mock_rasterizer,
+            mapping=human_mapping,
+            cache_dir=cache_dir,
+            max_dim=128,
+        )
+        npz_file = list(cache_dir.glob("*.npz"))[0]
+        data = np.load(npz_file)
+        assert 255 in data["mask"]
+
+
 class TestSplitByDonor:
     """Test donor-based splitting function."""
 

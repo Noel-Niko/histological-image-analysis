@@ -5,7 +5,7 @@ from transformers import UperNetForSemanticSegmentation, AutoImageProcessor
 import os
 import sys
 
-MODEL_PATH = "./models/dinov2-upernet-unfrozen"
+MODEL_PATH = "./models/dinov2-upernet-final"
 
 print("=" * 60)
 print("MODEL VERIFICATION")
@@ -23,7 +23,7 @@ for filename in required_files:
         print(f"      ERROR: Missing required file!")
         print(f"\n   Model path checked: {os.path.abspath(MODEL_PATH)}")
         print(f"   Have you downloaded the model yet?")
-        print(f"   Run: databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/unfrozen {MODEL_PATH}")
+        print(f"   Run: databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/final-200ep {MODEL_PATH}")
         sys.exit(1)
 
 # Check model weights

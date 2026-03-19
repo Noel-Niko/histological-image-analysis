@@ -76,7 +76,7 @@ class BigBrainSlicer:
         instance._histology_path = None
         instance._annotation_path = None
         instance._image_volume = cls._normalize_image(image)
-        instance._annotation_volume = annotation
+        instance._annotation_volume = annotation.astype(np.int64)
 
         logger.info(
             "Loaded volumes from arrays: shape=%s, image dtype=%s→uint8, "
@@ -121,7 +121,7 @@ class BigBrainSlicer:
         )
 
         self._image_volume = self._normalize_image(image_raw)
-        self._annotation_volume = annotation_raw
+        self._annotation_volume = annotation_raw.astype(np.int64)
 
         logger.info(
             "Volumes loaded: shape=%s, %d unique labels",

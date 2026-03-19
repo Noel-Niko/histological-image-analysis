@@ -67,7 +67,11 @@ The interleaved strategy is critical. An early experiment (Run 1) used a contigu
 
 **Decode head.** UperNet with PSP pooling module and FPN lateral connections. For 1,328 output classes, the decode head has 37.7M parameters.
 
-**Total model.** 342M parameters. With the last 4 backbone blocks unfrozen, 88M parameters (25.7%) are trainable. (See **Figure 1** for architecture overview.)
+**Total model.** 342M parameters. With the last 4 backbone blocks unfrozen, 88M parameters (25.7%) are trainable.
+
+**Figure 1. Model Architecture.**
+
+![Figure 1: Architecture overview](../figures/fig1_architecture.png)
 
 **Backbone unfreezing strategy.** We unfreeze the last 4 of 24 transformer blocks (blocks 20–23). Earlier blocks remain frozen, preserving general low-level and mid-level visual features. This partial unfreezing balances domain adaptation against catastrophic forgetting of pretrained representations.
 
@@ -197,7 +201,11 @@ This is the single largest improvement in the ablation study. Unfreezing allows 
 
 The +6.0% mIoU gain from doubling training duration is the second-largest improvement in the ablation study. This gain was 3× larger than our a priori estimate of +1–2%, indicating that Run 5 was substantially underfit at 100 epochs.
 
-At epoch 200, eval loss (0.300) continues to decline but the rate of improvement is slowing. We estimate +1–3% additional mIoU from a 300-epoch run, representing diminishing returns relative to the doubled compute cost. **Figure 2** shows representative segmentation examples from the final model across four rostral-caudal positions.
+At epoch 200, eval loss (0.300) continues to decline but the rate of improvement is slowing. We estimate +1–3% additional mIoU from a 300-epoch run, representing diminishing returns relative to the doubled compute cost.
+
+**Figure 2. Segmentation examples from the final model across four rostral-caudal positions.**
+
+![Figure 2: Segmentation examples](../figures/fig2_segmentation_examples.png)
 
 ### 4.8 Sliding Window Evaluation (Run 9)
 
@@ -211,7 +219,11 @@ We introduce sliding window evaluation alongside the standard center-crop protoc
 
 **Methodology.** The full 800 × 1,140 validation slice is tiled with 518 × 518 windows at stride 259 (50% overlap). In overlapping regions, logits are averaged before applying argmax. This evaluates the complete slice rather than the central 29%.
 
-**Finding.** 168 brain structures exist exclusively outside the center crop area — predominantly small peripheral structures near slice edges. All previous runs (1–8a) were evaluated with center-crop, systematically underestimating model quality. Sliding window evaluation recovers these classes and provides a more accurate assessment of the model's true segmentation capability. (See **Figure 6** for a visual comparison.)
+**Finding.** 168 brain structures exist exclusively outside the center crop area — predominantly small peripheral structures near slice edges. All previous runs (1–8a) were evaluated with center-crop, systematically underestimating model quality. Sliding window evaluation recovers these classes and provides a more accurate assessment of the model's true segmentation capability.
+
+**Figure 6. Center-crop vs sliding window evaluation.**
+
+![Figure 6: Sliding window vs center-crop](../figures/fig6_sliding_vs_centercrop.png)
 
 ---
 
@@ -234,7 +246,11 @@ Table 1 summarizes all ablation interventions ranked by their impact on mIoU.
 | 7 | Extended augmentation | Run 5 → 7 | −6.5% | Negative |
 | 8 | Test-time augmentation | Run 5 eval | −24.4% | Catastrophic |
 
-The three successful interventions (interleaved splitting, backbone unfreezing, extended training) all address fundamental training adequacy: ensuring the model sees representative data, adapts its features to the target domain, and trains long enough to converge. The three failed interventions (weighted loss, extended augmentation, TTA) all attempt to compensate for perceived deficiencies (class imbalance, data scarcity, inference-time robustness) that either do not exist or cannot be addressed by the chosen technique. **Figure 3** visualizes these results as a bar chart.
+The three successful interventions (interleaved splitting, backbone unfreezing, extended training) all address fundamental training adequacy: ensuring the model sees representative data, adapts its features to the target domain, and trains long enough to converge. The three failed interventions (weighted loss, extended augmentation, TTA) all attempt to compensate for perceived deficiencies (class imbalance, data scarcity, inference-time robustness) that either do not exist or cannot be addressed by the chosen technique.
+
+**Figure 3. Ablation study: impact of each intervention on mIoU.**
+
+![Figure 3: Ablation bar chart](../figures/fig3_ablation_barchart.png)
 
 ### 5.2 Per-Class Performance Predictors
 
@@ -251,7 +267,11 @@ We analyze per-class IoU as a function of class pixel count in the validation se
 | IoU < 0.1 | 11 | 2% | Barely detected |
 | IoU = 0.0 | 9 | 2% | Complete failure |
 
-84% of valid classes achieve IoU ≥ 0.5, indicating that the model segments the large majority of detectable structures well (**Figure 4**). The 20 classes below 0.1 IoU are uniformly small structures with fewer than 10,000 validation pixels: cranial nerves (trochlear nerve, oculomotor nerve), fine cortical layers (e.g., "Rostrolateral area, layer 6b"), and small fiber tracts (medial corticohypothalamic tract).
+84% of valid classes achieve IoU ≥ 0.5, indicating that the model segments the large majority of detectable structures well.
+
+**Figure 4. Per-class IoU distribution and pixel count correlation.**
+
+![Figure 4: IoU distribution](../figures/fig4_iou_distribution.png) The 20 classes below 0.1 IoU are uniformly small structures with fewer than 10,000 validation pixels: cranial nerves (trochlear nerve, oculomotor nerve), fine cortical layers (e.g., "Rostrolateral area, layer 6b"), and small fiber tracts (medial corticohypothalamic tract).
 
 **Top 10 classes by IoU (Run 9, center-crop):**
 
@@ -299,7 +319,11 @@ A diagnostic evaluation on Run 8a tested the coronal-only model on all three ana
 | Axial | 68 | 3.2% | 22.9% | Unseen |
 | Sagittal | 96 | 0.5% | 12.8% | Unseen |
 
-The model is strictly orientation-specific. Performance drops from 68.9% to 3.2% on axial sections (dorsoventral slices viewed from above) and to 0.5% on sagittal sections (mediolateral slices viewed from the side). This confirms that DINOv2 + UperNet encodes strong directional priors from the training orientation and cannot generalize across anatomical planes without explicit multi-axis training. This is consistent with the TTA finding (Section 4.5): the model fails on rotated inputs because it has learned orientation-dependent features, not orientation-invariant anatomical patterns. **Figure 5** shows model predictions across all three anatomical planes.
+The model is strictly orientation-specific. Performance drops from 68.9% to 3.2% on axial sections (dorsoventral slices viewed from above) and to 0.5% on sagittal sections (mediolateral slices viewed from the side). This confirms that DINOv2 + UperNet encodes strong directional priors from the training orientation and cannot generalize across anatomical planes without explicit multi-axis training. This is consistent with the TTA finding (Section 4.5): the model fails on rotated inputs because it has learned orientation-dependent features, not orientation-invariant anatomical patterns.
+
+**Figure 5. Cross-axis generalization: coronal-trained model on all three anatomical planes.**
+
+![Figure 5: Cross-axis generalization](../figures/fig5_cross_axis.png)
 
 **Implication.** Multi-axis inference requires either (a) separate models trained per orientation, or (b) multi-axis training — though the latter carries the risk of rot90-style failure (Section 4.4) if the model treats off-axis data as noise rather than learning generalizable representations.
 
@@ -386,6 +410,8 @@ The proven recipe emerging from 9 training runs is straightforward: (1) DINOv2-L
 | **9** | **1,328-class, unfrozen, 200 ep** | **74.8%** | **79.1%** | **94.1% / 96.9%** | **23.0 hrs** |
 
 The two most impactful interventions — backbone partial fine-tuning (+8.5% mIoU) and extended training to 200 epochs (+6.0% mIoU) — account for the full progression from the frozen baseline (60.3%) to the final model (74.8% center-crop). Combined with sliding window evaluation (+4.4%), these three factors together produce the 79.1% sliding window mIoU that represents the model's true segmentation quality.
+
+**Future work.** We are extending this approach to human brain tissue using two complementary datasets: the Allen Human Brain Atlas (sparse SVG polygon annotations across 6 donors, ~524 structure classes) and the BigBrain 200μm classified volume (dense 9-class tissue segmentation). These experiments will test whether the training recipe established here — partial backbone unfreezing, differential learning rates, extended training, plain cross-entropy loss — transfers to human neuroanatomy, which differs substantially in cytoarchitecture, spatial scale, and annotation methodology.
 
 ---
 

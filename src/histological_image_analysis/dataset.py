@@ -388,12 +388,16 @@ class AllenHumanDataset(Dataset):
     ``__getitem__()`` call. Uses ``sparse=True`` so unlabeled pixels are
     255 (ignored by ``CrossEntropyLoss(ignore_index=255)``).
 
+    When ``cache_dir`` is provided, loads pre-resized image+mask ``.npz``
+    files from the cache directory instead of raw JPEGs + SVG rasterization.
+    Use ``build_cache()`` to create the cache before training.
+
     Parameters
     ----------
     image_svg_pairs : list of (image_path, svg_path)
         Pairs of paths to JPEG images and SVG annotation files.
     rasterizer : SVGRasterizer
-        SVG rasterizer instance.
+        SVG rasterizer instance. Not used when ``cache_dir`` is set.
     mapping : dict
         Structure ID → class ID mapping. Structure IDs not in the mapping
         are mapped to 0. Pixels with value 255 (unlabeled) are preserved.
@@ -401,6 +405,10 @@ class AllenHumanDataset(Dataset):
         Output spatial size (default 518 for DINOv2).
     augment : bool
         Whether to apply random augmentation (training only).
+    cache_dir : str or Path or None
+        Directory containing pre-cached ``.npz`` files. When set,
+        ``__getitem__`` loads from ``{cache_dir}/{image_stem}.npz``
+        instead of reading JPEG + rasterizing SVG. Default None (lazy load).
     """
 
     def __init__(
@@ -410,12 +418,14 @@ class AllenHumanDataset(Dataset):
         mapping: dict[int, int],
         crop_size: int = 518,
         augment: bool = True,
+        cache_dir: str | Path | None = None,
     ) -> None:
         self._pairs = image_svg_pairs
         self._rasterizer = rasterizer
         self._mapping = mapping
         self._crop_size = crop_size
         self._augment = augment
+        self._cache_dir = Path(cache_dir) if cache_dir is not None else None
 
         # Build LUT for structure ID → class ID remapping
         # Preserves 255 as ignore_index
@@ -430,10 +440,11 @@ class AllenHumanDataset(Dataset):
         self._lut[255] = 255  # preserve ignore_index
 
         logger.info(
-            "AllenHumanDataset: %d pairs, crop_size=%d, augment=%s",
+            "AllenHumanDataset: %d pairs, crop_size=%d, augment=%s, cache=%s",
             len(self._pairs),
             crop_size,
             augment,
+            "enabled" if self._cache_dir else "disabled",
         )
 
     def __len__(self) -> int:
@@ -442,19 +453,26 @@ class AllenHumanDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, Any]:
         image_path, svg_path = self._pairs[idx]
 
-        # Load RGB image
-        img = Image.open(image_path).convert("RGB")
-        image = np.array(img)  # (H, W, 3) uint8
+        if self._cache_dir is not None:
+            # Load pre-cached resized image + remapped mask
+            stem = Path(image_path).stem
+            npz = np.load(self._cache_dir / f"{stem}.npz")
+            image = npz["image"]  # (H, W, 3) uint8
+            mask = npz["mask"]    # (H, W) int64
+        else:
+            # Lazy load: read JPEG + rasterize SVG
+            img = Image.open(image_path).convert("RGB")
+            image = np.array(img)  # (H, W, 3) uint8
 
-        h, w = image.shape[:2]
+            h, w = image.shape[:2]
 
-        # Rasterize SVG to mask (sparse: unlabeled=255, annotated=structure_id)
-        raw_mask = self._rasterizer.rasterize(
-            svg_path, target_width=w, target_height=h, sparse=True,
-        )
+            # Rasterize SVG to mask (sparse: unlabeled=255, annotated=structure_id)
+            raw_mask = self._rasterizer.rasterize(
+                svg_path, target_width=w, target_height=h, sparse=True,
+            )
 
-        # Remap structure IDs to class IDs, preserving 255
-        mask = self._lut[raw_mask]
+            # Remap structure IDs to class IDs, preserving 255
+            mask = self._lut[raw_mask]
 
         # Pad if needed
         image, mask = self._pad_if_needed(image, mask)
@@ -589,3 +607,98 @@ class AllenHumanDataset(Dataset):
             img_3ch[c] = (img_3ch[c] - IMAGENET_MEAN[c]) / IMAGENET_STD[c]
 
         return torch.from_numpy(img_3ch)
+
+    @staticmethod
+    def build_cache(
+        image_svg_pairs: list[tuple[Path, Path]],
+        rasterizer: Any,
+        mapping: dict[int, int],
+        cache_dir: str | Path,
+        max_dim: int = 1024,
+    ) -> int:
+        """Pre-cache resized images + remapped masks as ``.npz`` files.
+
+        For each (image, SVG) pair:
+        1. Load RGB image, resize so longest side = ``max_dim``
+        2. Rasterize SVG at original size, remap via LUT, resize (nearest)
+        3. Save as ``{cache_dir}/{image_stem}.npz``
+
+        Parameters
+        ----------
+        image_svg_pairs : list of (image_path, svg_path)
+            All pairs to cache.
+        rasterizer : SVGRasterizer
+            SVG rasterizer instance.
+        mapping : dict
+            Structure ID → class ID mapping.
+        cache_dir : str or Path
+            Output directory for ``.npz`` files.
+        max_dim : int
+            Maximum dimension (longest side) for resized images.
+
+        Returns
+        -------
+        int
+            Number of files cached.
+        """
+        cache_path = Path(cache_dir)
+        cache_path.mkdir(parents=True, exist_ok=True)
+
+        # Build LUT
+        if mapping:
+            max_sid = max(max(mapping.keys()), 255)
+        else:
+            max_sid = 255
+        lut = np.zeros(max_sid + 1, dtype=np.int64)
+        for sid, cid in mapping.items():
+            if sid <= max_sid:
+                lut[sid] = cid
+        lut[255] = 255
+
+        cached = 0
+        for image_path, svg_path in image_svg_pairs:
+            stem = Path(image_path).stem
+            out_path = cache_path / f"{stem}.npz"
+
+            if out_path.exists():
+                cached += 1
+                continue
+
+            # Load image
+            img_pil = Image.open(image_path).convert("RGB")
+            orig_w, orig_h = img_pil.size
+
+            # Rasterize SVG at original dimensions
+            raw_mask = rasterizer.rasterize(
+                svg_path,
+                target_width=orig_w,
+                target_height=orig_h,
+                sparse=True,
+            )
+            mask = lut[raw_mask]
+
+            # Resize if needed
+            longest = max(orig_h, orig_w)
+            if longest > max_dim:
+                scale = max_dim / longest
+                new_w = int(orig_w * scale)
+                new_h = int(orig_h * scale)
+                img_pil = img_pil.resize(
+                    (new_w, new_h), resample=Image.BILINEAR,
+                )
+                mask_pil = Image.fromarray(mask.astype(np.int32)).resize(
+                    (new_w, new_h), resample=Image.NEAREST,
+                )
+                mask = np.array(mask_pil).astype(np.int64)
+
+            image = np.array(img_pil)
+            np.savez_compressed(out_path, image=image, mask=mask)
+            cached += 1
+
+        logger.info(
+            "Cache built: %d files in %s (max_dim=%d)",
+            cached,
+            cache_path,
+            max_dim,
+        )
+        return cached

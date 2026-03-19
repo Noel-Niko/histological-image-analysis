@@ -2,7 +2,84 @@
 
 Fine-tune DINOv2-Large + UperNet for semantic segmentation of brain structures in Nissl-stained histological sections. Uses Allen Brain Institute CCFv3 volumetric data (10µm Nissl + annotations) to train a model that identifies anatomical brain regions at multiple granularities (coarse 6-class through fine 1,328-class), with the eventual goal of generalizing to autofluorescence imaging.
 
-## Prerequisites
+---
+
+## For PhD Researchers: Segment Your Brain Images
+
+Run the trained model on your own histological images — **no GPU or Databricks needed**.
+
+### 1. Install dependencies
+
+```bash
+pip install torch transformers matplotlib Pillow numpy tqdm
+```
+
+### 2. Download the trained model (~1.2 GB)
+
+```bash
+# Requires Databricks CLI (pip install databricks-cli)
+databricks fs cp -r \
+  dbfs:/FileStore/allen_brain_data/models/final-200ep \
+  ./models/dinov2-upernet-final
+```
+
+### 3. Add your images
+
+Place your brain tissue images (`.jpg`, `.png`, `.tif`) in the `images/` directory.
+
+### 4. Run inference
+
+**Option A — Script (batch processing, recommended for many images):**
+
+```bash
+python scripts/run_inference.py --image-dir images/ --output inference_results/
+```
+
+**Option B — Notebook (interactive, visual, recommended for exploration):**
+
+```bash
+jupyter notebook notebooks/local_inference.ipynb
+```
+
+**Option C — Full-resolution sliding window (slower but more accurate):**
+
+```bash
+python scripts/run_inference.py --image-dir images/ --output inference_results/ --sliding-window
+```
+
+### What you get
+
+For each input image, three files are saved to `inference_results/`:
+
+| File | Description |
+|------|-------------|
+| `<name>_mask.png` | Segmentation mask at model resolution (518x518, uint16) |
+| `<name>_mask_resized.png` | Segmentation mask at original image size (uint16) |
+| `<name>_visualization.png` | Side-by-side: input / segmentation / overlay |
+
+Each pixel value is a class ID (0-1327) mapping to one of 1,328 Allen Mouse Brain Atlas structures.
+
+### Compute requirements
+
+| Hardware | Speed per image |
+|----------|----------------|
+| **CPU only (laptop)** | ~10-30 seconds |
+| Laptop GPU (MX/GTX) | ~2-5 seconds |
+| Desktop GPU (RTX 3060+) | ~1-2 seconds |
+
+RAM: 8 GB minimum, 16 GB recommended. Model size: ~1.2 GB.
+
+### More info
+
+- [Model download guide](docs/model_download_guide.md) — download, verify, troubleshoot
+- [Paper draft](docs/paper_draft.md) — full ablation study (79.1% mIoU, 9 runs)
+- [CLI script options](scripts/run_inference.py) — `python scripts/run_inference.py --help`
+
+---
+
+## Developer Setup
+
+### Prerequisites
 
 | Tool | Version | Purpose |
 |------|---------|---------|
@@ -141,57 +218,6 @@ for details. Single-GPU runs with `batch_size=4` have been verified to work with
 
 **Run 9 (final model):** Doubling training from 100→200 epochs yielded +6.0% mIoU — second largest improvement. Sliding window evaluation added +4.4% mIoU and revealed 168 additional valid classes. See [docs/paper_draft.md](docs/paper_draft.md) for the full ablation study.
 
-## Using Trained Models
-
-### Quick Start (PhD Researchers)
-
-**Run inference on your brain tissue images:**
-
-```bash
-# 1. Download model (~1.2 GB, requires Databricks CLI)
-databricks fs cp -r dbfs:/FileStore/allen_brain_data/models/final-200ep ./models/dinov2-upernet-final
-
-# 2. Run inference on a single image
-python scripts/run_inference.py --image path/to/brain_slice.jpg --output results/
-
-# 3. Or batch process a directory
-python scripts/run_inference.py --image-dir images/ --output results/
-
-# 4. Full-resolution tiled inference (sliding window)
-python scripts/run_inference.py --image path/to/brain_slice.jpg --output results/ --sliding-window
-```
-
-**Compute Requirements:**
-- ✅ **Runs on laptop** (CPU or GPU)
-- RAM: 8 GB minimum, 16 GB recommended
-- CPU inference: ~10-30 seconds per image
-- GPU inference: ~1-5 seconds per image (optional)
-
-**Output:** Segmentation masks + visualizations showing predicted brain regions
-
-### Advanced Usage
-
-```bash
-# Load directly from MLflow (no download)
-python -c "
-import mlflow.transformers
-model = mlflow.transformers.load_model('runs:/6cc49e1ccb0d4b30b371e9a071dcbe6f/model')
-"
-
-# Custom model path
-python scripts/run_inference.py --image image.jpg --model ./models/custom-model --output results/
-
-# Force CPU (no GPU)
-python scripts/run_inference.py --image image.png --cpu --output results/
-```
-
-**Model size:** ~1.2-1.5 GB (excluded from git via `.gitignore`)
-
-**See also:**
-- [docs/model_download_guide.md](docs/model_download_guide.md) - Complete download guide, verification, troubleshooting
-- [scripts/run_inference.py](scripts/run_inference.py) - CLI inference tool with batch processing
-- [verify_model.py](verify_model.py) - Quick model verification script
-
 ## Project Structure
 
 ```
@@ -210,18 +236,16 @@ histological-image-analysis/
 │   ├── test_training.py                 # 35 tests
 │   ├── conftest.py                      # Shared fixtures
 │   └── fixtures/minimal_ontology.json   # 15-structure test fixture
+├── images/                              # Drop your brain images here for inference
 ├── notebooks/
-│   ├── finetune_final_200ep.ipynb       # Final model: 200 epochs, 79.1% mIoU (Run 9)
-│   ├── generate_paper_figures.ipynb     # Generate all 6 paper figures (Databricks)
+│   ├── local_inference.ipynb            # ← START HERE: local CPU inference notebook
+│   ├── finetune_final_200ep.ipynb       # Final model training (Databricks, Run 9)
+│   ├── generate_paper_figures.ipynb     # Paper figures (Databricks)
 │   └── historical/                      # Previous training runs (Runs 1-8a)
-│       ├── finetune_coarse.ipynb        # Coarse 6-class training
-│       ├── finetune_depth2.ipynb        # Depth-2 19-class training
-│       ├── finetune_full.ipynb          # Full 1,328-class (frozen backbone)
-│       └── finetune_unfrozen.ipynb      # Full 1,328-class (unfrozen backbone)
 ├── scripts/
-│   ├── download_allen_data.py           # Local download of Allen Brain data
-│   ├── run_inference.py                 # CLI inference tool with batch processing
-│   └── generate_paper_figures.py        # Generate figures locally (Figs 1, 3 only)
+│   ├── run_inference.py                 # CLI inference: --image, --image-dir, --sliding-window
+│   ├── download_allen_data.py           # Download Allen Brain CCFv3 data
+│   └── generate_paper_figures.py        # Generate paper figures locally (Figs 1, 3)
 ├── docs/                                # Design docs and progress tracking
 │   ├── progress.md                      # Full project history
 │   ├── step10_plan.md                   # Step 10 plan (for LLM continuity)

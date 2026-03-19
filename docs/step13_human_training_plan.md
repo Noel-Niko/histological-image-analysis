@@ -2,8 +2,8 @@
 
 **Date:** 2026-03-16
 **Depends on:** `docs/data_download_plan_human.md`, `docs/human_data_search_results.md`, `docs/progress.md`
-**Status:** IMPLEMENTATION IN PROGRESS — Steps 0-3B DONE. Next: Steps 4A+4B (training notebooks).
-**Updated:** 2026-03-17 — Run 9 complete (74.8% CC / 79.1% SW mIoU). Steps 0-2A-validate implemented and tested.
+**Status:** STEP 6 IN PROGRESS — Both tracks trained. Allen 50ep complete, BigBrain 200ep complete. Next: Allen 200ep + depth-3 coarser-class experiment.
+**Updated:** 2026-03-19 — Allen 50ep results: 25.8% CC mIoU (597 classes). BigBrain 200ep: 60.8% CC mIoU (10 classes). User chose: 200ep fine-grained + depth-3 (~92 classes) coarser model.
 
 ---
 
@@ -315,31 +315,44 @@ Ran validation on 50 proportionally-sampled SVGs across all 6 donors.
 - **Tests:** `tests/test_dataset.py` — **3 new tests (TestBigBrainSlicerCompat), 294 total, all pass**
   - Creates `BrainSegmentationDataset` with `BigBrainSlicer`, verifies shapes/dtypes/label ranges
 
-### Step 4A: Create Allen training notebook (Track A)
+### Step 4A: Create Allen training notebook (Track A) — DONE (2026-03-17)
 
 - **File:** `notebooks/finetune_human_allen.ipynb`
-- **Structure:** Same 8-cell pattern as mouse notebooks
-  - Cell 0: Install wheel
-  - Cell 1: Configuration (human paths, Graph 10 ontology, donor split, hyperparams)
-  - Cell 2: Download DINOv2 weights
-  - Cell 3: Build Allen datasets (load metadata, filter annotated, split by donor, build present_mapping)
-  - Cell 4: Create model (`num_labels` from present_mapping) + forward pass validation
-  - Cell 5: Train (Run 5 config, 200 epochs, masked loss via ignore_index=255)
-  - Cell 6: Evaluate + visualize (per-class IoU, sample segmentations)
-  - Cell 7: Save + MLflow log
+- **Structure:** 9 cells (markdown header + 8 code cells), same pattern as mouse Run 9
+  - Cell 0 (markdown): Track description, key differences from mouse
+  - Cell 1: Install wheel + restartPython
+  - Cell 2: Configuration — Graph 10 paths, donor split, MLflow experiment, 200 epochs
+  - Cell 3: Download DINOv2-Large from JFrog Artifactory mirror
+  - Cell 4: Build Allen datasets — load metadata JSON, filter annotated, build (image,svg,donor) triples, split_by_donor, scan training SVGs for structure IDs, build_full_mapping → build_present_mapping, create AllenHumanDataset + SVGRasterizer
+  - Cell 5: Create model (num_labels from present_mapping) + freeze blocks 0-19 + gradient checkpointing + forward pass validation
+  - Cell 6: Train — differential LR (backbone 1e-5, head 1e-4), AdamW, linear warmup, 200 epochs
+  - Cell 7: Evaluate — center-crop (Trainer.evaluate) + sliding window (RGB `normalize_tile_rgb`, limited to 50 val images for speed). Per-class IoU. Logs to MLflow.
+  - Cell 8: Save model + present_mapping.json + image processor + log to MLflow
+- **Key differences from mouse notebook:**
+  - RGB `normalize_tile_rgb()` for sliding window (transposes H,W,3 → 3,H,W, not grayscale replication)
+  - Sliding window eval limited to 50 images (full val=641 would be very slow with lazy loading)
+  - Saves `present_mapping.json` alongside model for later inference
+  - Sliding window excludes ignore_index=255 pixels from metrics
 
-### Step 4B: Create BigBrain training notebook (Track B)
+### Step 4B: Create BigBrain training notebook (Track B) — DONE (2026-03-17)
 
 - **File:** `notebooks/finetune_human_bigbrain.ipynb`
-- **Structure:** Same 8-cell pattern
-  - Cell 0: Install wheel
-  - Cell 1: Configuration (BigBrain paths, 9-class mapping, hyperparams)
-  - Cell 2: Download DINOv2 weights
-  - Cell 3: Build BigBrain datasets (load NIfTI volumes, interleaved split, 9-class mapping)
-  - Cell 4: Create model (`num_labels=9` for tissue classes) + forward pass validation
-  - Cell 5: Train (Run 5 config, 200 epochs, standard CE — dense annotations)
-  - Cell 6: Evaluate + visualize (per-class IoU, sample segmentations)
-  - Cell 7: Save + MLflow log
+- **Structure:** 9 cells (markdown header + 8 code cells), same pattern as mouse Run 9
+  - Cell 0 (markdown): Track description, key differences from mouse
+  - Cell 1: Install wheel + restartPython
+  - Cell 2: Configuration — BigBrain NIfTI paths, 10 classes, gap=2, MLflow experiment, 200 epochs
+  - Cell 3: Download DINOv2-Large from JFrog Artifactory mirror
+  - Cell 4: Build BigBrain datasets — BigBrainSlicer(histology, annotation), load_volumes(), build_bigbrain_9class_mapping(), BrainSegmentationDataset with interleaved split
+  - Cell 5: Create model (num_labels=10) + freeze blocks 0-19 + gradient checkpointing + forward pass
+  - Cell 6: Train — same recipe as Track A
+  - Cell 7: Evaluate — center-crop + sliding window (grayscale `normalize_tile`, same as mouse). Per-class IoU for all 10 classes. All val slices (smaller dataset than Track A).
+  - Cell 8: Save model + image processor + log to MLflow
+- **Key differences from Track A:**
+  - Grayscale normalization (same as mouse — BigBrain is single-channel)
+  - Uses BrainSegmentationDataset (pre-loads all slices) not AllenHumanDataset (lazy)
+  - Dense annotations — no ignore_index handling needed
+  - gap=2 in split for spatial leakage mitigation
+  - Full val set for sliding window (fewer slices than Track A's 641 images)
 
 ### Step 5: Deploy both notebooks
 
@@ -425,10 +438,13 @@ All design decisions FINALIZED ──────────→ Step 1:  Extend
 | 2B: BigBrainSlicer | DONE | 31 (274 total) | New file `bigbrain_slicer.py` + nibabel dep. Gap-based exclusion for spatial leakage. |
 | 3A: AllenHumanDataset | DONE | 17 (294 total) | Lazy load, LUT remap, RGB normalize, sparse mask=255, donor split |
 | 3B: Adapt BrainSegDataset | DONE | 3 (294 total) | Type hint relaxed to `Any`, BigBrainSlicer compat verified |
-| 4A: Allen notebook | pending | — | |
-| 4B: BigBrain notebook | pending | — | |
-| 5: Deploy both | pending | — | |
-| 6: Compare | pending | — | |
+| 4A: Allen notebook | DONE | — (notebook) | 9 cells, RGB sliding window, saves present_mapping.json |
+| 4B: BigBrain notebook | DONE | — (notebook) | 9 cells, grayscale sliding window, gap=2, 10 classes |
+| 5: Deploy both | DONE | — | Wheel + both notebooks deployed to Databricks (2026-03-17) |
+| 5.1: Pre-cache fix | DONE | 7 (301 total) | Added `cache_dir` + `build_cache()` to AllenHumanDataset. 10.5x speedup. |
+| 6: Compare | IN PROGRESS | — | BigBrain 200ep done (60.8% mIoU). Allen 50ep done (25.8% mIoU). Next: Allen 200ep + depth-3 |
+| 6.1: Allen 200ep notebook | DONE | — | Updated `NUM_EPOCHS` 50→200, cleared stale outputs |
+| 6.2: Allen depth-3 notebook | DONE | — | New `finetune_human_allen_depth3.ipynb`, depth-3 mapping (~92 classes), separate cache |
 
 ### Key corrections discovered during implementation
 1. **"Default" graphic_group is always EMPTY.** All annotations are in "Non-sampled" (brain structures) + "Spaces" (white matter, sulci). No group filtering needed — include ALL polygons with non-empty `structure_id`.
@@ -437,64 +453,85 @@ All design decisions FINALIZED ──────────→ Step 1:  Extend
 4. **~4% of SVGs are empty** (have SVG file but zero annotation polygons). Dataset loader must filter these.
 5. **BigBrain 9 classes identified:** Background, Gray Matter, White Matter, CSF, Meninges, Blood Vessels, Bone/Skull, Muscle, Artifact, Other/Unknown.
 
-### Next step: Steps 4A + 4B (training notebooks)
+### Bugs found during first Databricks run (2026-03-17)
 
-Both notebooks follow the exact 8-cell pattern from `notebooks/finetune_final_200ep.ipynb` (Run 9). Reference that notebook for the template.
+**Status: ALL 3 FIXED. Wheel + both notebooks redeployed (2026-03-17).**
 
-**Step 4A: `notebooks/finetune_human_allen.ipynb`**
-- Cell 0: `%pip install wheel`, `restartPython()`
-- Cell 1: Configuration — paths below, Graph 10 ontology, donor split, 200 epochs, same hyperparams as Run 9
-- Cell 2: Download DINOv2-Large from JFrog Artifactory mirror (same as mouse)
-- Cell 3: Build datasets:
-  - Load `human_atlas_images_metadata.json` to get `(image_id, donor_id, annotated)` list
-  - Filter to `annotated=True` only
-  - Build `(image_path, svg_path, donor_id)` triples using filename pattern: `{DONOR}_{SECTION:04d}_{ID}.jpg` / `.svg`
-  - Call `split_by_donor(pairs, train_donors, val_donors, test_donors)`
-  - Load Graph 10 with `OntologyMapper(ONTOLOGY_PATH)`
-  - Build `build_full_mapping()` → `build_present_mapping()` (scan training SVGs for unique structure IDs)
-  - Create `SVGRasterizer(mapper)` and `AllenHumanDataset(pairs, rasterizer, mapping, crop_size=518, augment=True/False)`
-- Cell 4: Create model (`num_labels` from present_mapping) + forward pass
-- Cell 5: Train with differential LR (backbone 1e-5, head 1e-4), 200 epochs
-- Cell 6: Evaluate (center-crop + sliding window — adapt normalize_tile for RGB)
-- Cell 7: Save + MLflow log
+1. **FIXED — Allen notebook `KeyError: 'donor_id'`**: Metadata JSON uses `_donor` (underscore prefix, added by download script), not `donor_id`. Changed `entry["donor_id"]` → `entry["_donor"]` in Cell 3.
 
-**Step 4B: `notebooks/finetune_human_bigbrain.ipynb`**
-- Cell 0: `%pip install wheel`, `restartPython()`
-- Cell 1: Configuration — BigBrain paths, 9-class mapping, 200 epochs
-- Cell 2: Download DINOv2-Large (same)
-- Cell 3: Build datasets:
-  - `BigBrainSlicer(histology_path, annotation_path)`
-  - `slicer.load_volumes()`
-  - `build_bigbrain_9class_mapping()` → identity mapping
-  - `BrainSegmentationDataset(slicer, split, mapping, split_strategy="interleaved", gap=2)`
-- Cell 4: Create model (`num_labels=10`) + forward pass
-- Cell 5: Train (same recipe)
-- Cell 6: Evaluate
-- Cell 7: Save + MLflow log
+2. **FIXED — BigBrain `IndexError: arrays used as indices must be of integer type`**: NIfTI annotation volume loaded by nibabel has float dtype. `_remap_mask()` uses `lut[mask]` which requires integer indices. Fixed by casting to `np.int64` in both `load_volumes()` and `from_arrays()` in `bigbrain_slicer.py`.
 
-**Databricks paths:**
-```
-WORKSPACE_BASE = "/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology"
-# Track A (Allen Human)
-ONTOLOGY_PATH      = f"{WORKSPACE_BASE}/ontology/structure_graph_10.json"
-METADATA_PATH      = f"{WORKSPACE_BASE}/metadata/human_atlas_images_metadata.json"
-IMAGES_DIR         = f"{WORKSPACE_BASE}/human_atlas/images"
-SVGS_DIR           = f"{WORKSPACE_BASE}/human_atlas/svgs"
-# Track B (BigBrain)
-BIGBRAIN_HISTOLOGY = f"{WORKSPACE_BASE}/bigbrain/histological_volume/full8_200um_optbal.nii.gz"
-BIGBRAIN_ANNOTATION= f"{WORKSPACE_BASE}/bigbrain/classified_volume/full_cls_200um_9classes.nii.gz"
-```
+3. **FIXED — Allen sliding window eval OOM**: Allen images at downsample=4 are ~6K-12K pixels per axis. The sliding window eval allocates `logit_sum = np.zeros((num_labels, H, W), dtype=float32)`. With ~524 classes and 8560x6796 pixels: 524 * 8560 * 6796 * 4 bytes ≈ **122 GB per image**. Mouse slices were only 800x1140, making this tractable. Fix: added `resize_for_sliding_window()` helper that resizes images to `SW_MAX_DIM=1024` before tiling (logit_sum ≈ 2.1 GB, manageable). Also added CPU guard for `torch.amp.autocast` in both notebooks.
 
-**Filename pattern:** `{DONOR}_{SECTION:04d}_{ID}.{ext}` (e.g., `H0351.1009_0001_102059023.jpg`)
+4. **FIXED — BigBrain sliding window CPU guard**: Added `use_cuda = device.type == "cuda"` check in BigBrain notebook's `sliding_window_predict()` to avoid crash on CPU.
 
-**Donor split (from plan):**
-- Train: H0351.2002, H0351.2001, H0351.1012, H0351.1009 (3,188 images)
-- Val: H0351.1016 (641 images)
-- Test: H0351.1015 (634 images)
+### Second Databricks run results (2026-03-18)
 
-**Present mapping discovery:** Scan all training SVGs for unique structure IDs. Parse each SVG with `SVGRasterizer._parse_polygons()` to extract structure IDs (fast — no rasterization needed). Collect unique set → pass to `build_present_mapping()`.
+**Track B (BigBrain) — COMPLETED:** 60.8% mIoU (CC), 61.3% mIoU (SW), 90% accuracy. 200 epochs in 74 min. Strong result for 10-class tissue segmentation. Convergence plateaued at ~epoch 60-80.
 
-**Key difference for sliding window eval (Step 4A):** Mouse uses grayscale→3ch replication. Human uses native RGB. The `normalize_tile()` function needs to load RGB and transpose (H,W,3)→(3,H,W) instead of replicating a single channel.
+**Track A (Allen) — STOPPED at epoch 5.4/200 after 10 hours.** Training speed: 0.13 it/s. Estimated 14 days for 200 epochs. mIoU at epoch 5: 1.8% (expected — 597 classes with sparse annotations need many epochs). Loss was dropping (8.76 → 5.18), confirming the model was learning.
+
+**Root cause:** `AllenHumanDataset` lazy-loads 6K-12K pixel JPEGs + rasterizes SVGs on every `__getitem__()` call. This is ~7.7s per training step vs ~0.3s for pre-loaded BigBrain slices.
+
+### Fix: Pre-cache + reduced epochs (2026-03-17)
+
+1. **Added `cache_dir` parameter to `AllenHumanDataset`** — when set, loads pre-resized `.npz` files instead of raw JPEGs + SVG rasterization. Added `build_cache()` static method to create the cache.
+2. **Pre-cache cell in Allen notebook** — resizes all 4,463 images to max 1024px, rasterizes SVGs, remaps labels, saves as `.npz` files. One-time cost (~15-20 min).
+3. **Reduced epochs from 200 → 50** — BigBrain plateaued at ~60 epochs; Allen has 3x more data per epoch.
+4. **Expected training time:** ~12 hours for 50 epochs (vs 14 days before).
+5. **Tests:** 301 pass (7 new cache tests).
+
+### Third Databricks run: Allen 50 epochs with pre-cache (2026-03-19)
+
+**Track A (Allen) — 50 epochs COMPLETE:**
+- Cache build: 4,463 files in 468 min (SVG rasterization at full resolution was the bottleneck — much slower than the estimated 15-20 min)
+- Training speed: 1.37 it/s (10.5x faster than uncached 0.13 it/s)
+- Training time: 8.1 hours (29,169s) for 50 epochs / 39,850 steps
+- CC mIoU: **25.8%**, CC accuracy: 63.8%
+- SW mIoU: **21.0%** (50 images, resized to 1024px), SW accuracy: 75.9%
+- 269/597 classes have valid IoU (45%)
+- SW mIoU < CC mIoU (-4.9%) — resizing to 1024px loses fine-grained detail needed for 597 classes
+- Loss still declining at epoch 50 (train 0.90, val 2.49) — model hadn't fully converged
+- Top classes: medial parabrachial nucleus 100%, dentate nucleus 99.5%, pontine nuclei 99.0%
+- Bottom classes: cerebellum lobules near zero (I-II: 0.01%, VIIAf: 0.1%)
+
+**Track B (BigBrain) — already complete (previous run):**
+- CC mIoU: **60.8%**, CC accuracy: 90.0%
+- SW mIoU: **61.3%**, SW accuracy: 93.7%
+
+**Comparison (Step 6 — initial):**
+
+| Metric | Track A (Allen, 597 classes) | Track B (BigBrain, 10 classes) |
+|--------|------------------------------|-------------------------------|
+| CC mIoU | 25.8% | 60.8% |
+| SW mIoU | 21.0% | 61.3% |
+| CC accuracy | 63.8% | 90.0% |
+| Training time | 8.1 hrs (50ep) | 74 min (200ep) |
+| Classes with valid IoU | 269/597 (45%) | 10/10 (100%) |
+| Convergence | Still improving | Plateaued at ~ep60 |
+
+Direct mIoU comparison is apples-to-oranges (597 vs 10 classes). Key observations:
+1. Allen model achieves high IoU on deep brain structures (thalamus, brainstem nuclei) — these have more consistent appearance across donors
+2. Allen model struggles with cortical structures and cerebellum lobules — high inter-donor variability and fewer training examples
+3. BigBrain model achieves strong tissue-level segmentation — useful as a coarse tissue type classifier
+4. Allen training hadn't converged — more epochs would help
+
+### User decision: more epochs + coarser classes (2026-03-19)
+
+User chose **options 1+2** (confirmed via iMessage):
+1. **More epochs** — Allen 597-class model to 200 total epochs (fresh run, /tmp checkpoint from 50ep is gone).
+2. **Coarser classes** — Train a separate Allen model with **depth-3 mapping** (~92 total classes, ~50-80 after present filter). Depth-3 groups structures into brain regions: cerebral cortex, thalamus, cerebellum, pons, hypothalamus, midbrain tegmentum, etc.
+
+**Implementation (approved 2026-03-19):**
+1. Updated Allen notebook `NUM_EPOCHS` from 50 → 200. Cleared stale 50ep outputs.
+2. Created `notebooks/finetune_human_allen_depth3.ipynb` — same structure as fine-grained notebook, but uses `build_depth_mapping(depth=3)` → `build_present_mapping()`. Separate cache dir `/tmp/allen_cache_depth3` (different mask labels). Separate output dir `/dbfs/FileStore/allen_brain_data/models/human-allen-depth3`.
+3. Depth-3 mapping on Graph 10: 92 total classes (91 brain regions + background). After `build_present_mapping()` filter, expect ~50-80 classes (depending on which of the 596 observed structure IDs have depth-3 ancestors).
+4. Both notebooks use 200 epochs, same Run 9 recipe, same donor split, same pre-cache infrastructure.
+5. **Compare all three:** Allen 597-class (200ep) vs Allen depth-3 (~50-80 classes, 200ep) vs BigBrain 10-class (200ep).
+
+**Cache note:** Depth-3 notebook requires its own cache (different mask labels). Cache build is ~468 min per notebook. Both need rebuilding if cluster was terminated (/tmp is ephemeral).
+
+**Cluster requirements:** Single-GPU (L40S 48 GB recommended). Can run both Allen notebooks sequentially on the same cluster (share model weights + images, separate caches).
 
 ### Key files
 - `docs/step13_human_training_plan.md` (this file — authoritative plan)
@@ -504,13 +541,16 @@ BIGBRAIN_ANNOTATION= f"{WORKSPACE_BASE}/bigbrain/classified_volume/full_cls_200u
 - `src/histological_image_analysis/ontology.py` (updated: BigBrain 9-class mapping)
 - `src/histological_image_analysis/svg_rasterizer.py` (updated: `_parse_polygons()` + `sparse` param)
 - `src/histological_image_analysis/bigbrain_slicer.py` (new: NIfTI volume slicer with gap-based exclusion)
-- `src/histological_image_analysis/dataset.py` (updated: `AllenHumanDataset` class, `split_by_donor()`, relaxed type hint)
+- `src/histological_image_analysis/dataset.py` (updated: `AllenHumanDataset` class, `split_by_donor()`, relaxed type hint, `cache_dir` + `build_cache()`)
 - `src/histological_image_analysis/training.py` (unchanged — `create_model()`, `get_training_args()`, `make_compute_metrics()`)
+- `notebooks/finetune_human_allen.ipynb` (Track A: 597-class, 200 epochs, pre-cached)
+- `notebooks/finetune_human_allen_depth3.ipynb` (Track A-depth3: ~50-80 classes, 200 epochs, separate cache)
+- `notebooks/finetune_human_bigbrain.ipynb` (Track B: 10-class, 200 epochs)
 - `tests/test_ontology.py` (228 tests)
 - `tests/test_svg_rasterizer.py` (25 tests)
 - `tests/test_bigbrain_slicer.py` (31 tests — new)
 - `tests/test_dataset.py` (updated: +3 BigBrainSlicer compat tests)
-- `tests/test_allen_human_dataset.py` (17 tests — new)
+- `tests/test_allen_human_dataset.py` (24 tests — 17 original + 7 cache tests)
 - `tests/fixtures/sample_human.svg` (test fixture)
 - `tests/fixtures/sample_human_image.jpg` (test fixture — 200×100 RGB)
 
@@ -523,4 +563,4 @@ All at `/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology/`
 VSI → JPEG/PNG conversion → rotate to horizontal → feed to winning model
 
 ### Implementation order
-~~Steps 1 → 2A + 2B → 2A-validate → 3A+3B~~ → 4A+4B (parallel) → 5 → 6
+~~Steps 1 → 2A + 2B → 2A-validate → 3A+3B → 4A+4B → 5~~ → 6

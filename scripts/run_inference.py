@@ -146,6 +146,89 @@ def run_inference(
     return prediction_np, resized_prediction
 
 
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+CROP_SIZE = 518
+
+
+def _normalize_tile(tile: np.ndarray) -> torch.Tensor:
+    """uint8 grayscale or RGB (H, W, 3) -> float32 tensor (1, 3, H, W)."""
+    if tile.ndim == 2:
+        img = tile.astype(np.float32) / 255.0
+        img_3ch = np.stack([img, img, img], axis=0)
+    else:
+        img_3ch = tile.astype(np.float32).transpose(2, 0, 1) / 255.0
+    for c in range(3):
+        img_3ch[c] = (img_3ch[c] - IMAGENET_MEAN[c]) / IMAGENET_STD[c]
+    return torch.from_numpy(img_3ch).unsqueeze(0)
+
+
+def run_sliding_window_inference(
+    image_path: str,
+    model: UperNetForSemanticSegmentation,
+    device: torch.device,
+    stride: int = 259,
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """Run sliding window inference for full-resolution tiled prediction.
+
+    Tiles the image with 518x518 windows at the given stride, averages logits
+    in overlapping regions, then argmax. Returns full-resolution prediction.
+    """
+    try:
+        image = Image.open(image_path).convert("RGB")
+        original_size = image.size  # (width, height)
+    except Exception as e:
+        print(f"ERROR: Failed to load image {image_path}: {e}")
+        return None, None
+
+    img_np = np.array(image)  # (H, W, 3)
+    h, w = img_np.shape[:2]
+    num_labels = model.config.num_labels
+    crop_size = CROP_SIZE
+
+    pad_h = max(0, crop_size - h)
+    pad_w = max(0, crop_size - w)
+    if pad_h > 0 or pad_w > 0:
+        img_np = np.pad(img_np, ((0, pad_h), (0, pad_w), (0, 0)),
+                        mode="constant", constant_values=0)
+    ph, pw = img_np.shape[:2]
+
+    logit_sum = np.zeros((num_labels, ph, pw), dtype=np.float32)
+    count_map = np.zeros((ph, pw), dtype=np.float32)
+
+    y_starts = list(range(0, ph - crop_size + 1, stride))
+    x_starts = list(range(0, pw - crop_size + 1, stride))
+    if y_starts[-1] + crop_size < ph:
+        y_starts.append(ph - crop_size)
+    if x_starts[-1] + crop_size < pw:
+        x_starts.append(pw - crop_size)
+
+    model.eval()
+    use_cuda = device.type == "cuda"
+    n_tiles = len(y_starts) * len(x_starts)
+    tile_idx = 0
+    for y in y_starts:
+        for x in x_starts:
+            tile = img_np[y:y + crop_size, x:x + crop_size]
+            pixel_values = _normalize_tile(tile).to(device)
+            with torch.no_grad():
+                if use_cuda:
+                    with torch.amp.autocast("cuda", dtype=torch.float16):
+                        logits = model(pixel_values=pixel_values).logits
+                else:
+                    logits = model(pixel_values=pixel_values).logits
+            tile_logits = logits.squeeze(0).float().cpu().numpy()
+            logit_sum[:, y:y + crop_size, x:x + crop_size] += tile_logits
+            count_map[y:y + crop_size, x:x + crop_size] += 1.0
+            tile_idx += 1
+
+    count_map = np.maximum(count_map, 1.0)
+    avg_logits = logit_sum / count_map[np.newaxis, :, :]
+    prediction = avg_logits.argmax(axis=0).astype(np.int64)[:h, :w]
+
+    return prediction, prediction
+
+
 def save_results(
     image_path: str,
     prediction: np.ndarray,
@@ -327,8 +410,11 @@ For more information, see: docs/model_download_guide.md
     else:
         image_files = get_image_files(args.image_dir)
 
-    print(f"\nProcessing {len(image_files)} image(s)...")
+    mode = "sliding window" if args.sliding_window else "center-crop"
+    print(f"\nProcessing {len(image_files)} image(s) [{mode}]...")
     print(f"Output directory: {args.output}")
+    if args.sliding_window:
+        print(f"Sliding window: {CROP_SIZE}x{CROP_SIZE} tiles, stride {args.stride}")
     print("=" * 60)
 
     # Process each image
@@ -336,9 +422,14 @@ For more information, see: docs/model_download_guide.md
         print(f"\n{Path(image_path).name}")
 
         # Run inference
-        prediction, resized_prediction = run_inference(
-            image_path, model, processor, device
-        )
+        if args.sliding_window:
+            prediction, resized_prediction = run_sliding_window_inference(
+                image_path, model, device, stride=args.stride,
+            )
+        else:
+            prediction, resized_prediction = run_inference(
+                image_path, model, processor, device
+            )
 
         if prediction is None:
             print(f"  ✗ Skipped (failed to load)")

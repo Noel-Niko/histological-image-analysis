@@ -89,4 +89,12 @@ Write a technical report / paper draft to `docs/paper_draft.md` covering mouse m
 - [x] Plan written
 - [x] Plan approved by user (via iMessage, 2026-03-17)
 - [x] Paper draft written to `docs/paper_draft.md`
+- [x] Figure references added to paper draft (Figures 1-6)
+- [x] Figure generation notebook: `notebooks/generate_paper_figures.ipynb` (Databricks)
+- [x] Local figure script: `scripts/generate_paper_figures.py` (Figs 1, 3 without model)
+- [x] `.gitignore` updated with `figures/`
+- [x] `scripts/run_inference.py` updated: final model path + `--sliding-window` flag
+- [x] `README.md` updated: Runs 6-9 results, final model paths, project structure
+- [x] `docs/model_download_guide.md` updated: final-200ep model, metrics, paths
+- [x] `verify_model.py` updated: final model path
 - [ ] User review complete

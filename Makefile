@@ -27,8 +27,12 @@ NOTEBOOK_ABLATION_SRC   := notebooks/finetune_pruned_ablation.ipynb
 NOTEBOOK_ABLATION_DEST  := $(WORKSPACE_BASE)/notebooks/finetune_pruned_ablation
 NOTEBOOK_FINAL_SRC      := notebooks/finetune_final_200ep.ipynb
 NOTEBOOK_FINAL_DEST     := $(WORKSPACE_BASE)/notebooks/finetune_final_200ep
+NOTEBOOK_HUMAN_ALLEN_SRC  := notebooks/finetune_human_allen.ipynb
+NOTEBOOK_HUMAN_ALLEN_DEST := $(WORKSPACE_BASE)/notebooks/finetune_human_allen
+NOTEBOOK_HUMAN_BB_SRC     := notebooks/finetune_human_bigbrain.ipynb
+NOTEBOOK_HUMAN_BB_DEST    := $(WORKSPACE_BASE)/notebooks/finetune_human_bigbrain
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy deploy-human-annotations validate help
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-bigbrain deploy deploy-human-annotations validate help
 
 # ── Local Development ──────────────────────────────────────────────────
 
@@ -145,6 +149,24 @@ deploy-notebook-final: ## Upload final 200-epoch training notebook (Run 9)
 		--profile $(DATABRICKS_PROFILE)
 	@echo "Notebook uploaded to $(NOTEBOOK_FINAL_DEST)"
 
+deploy-notebook-human-allen: ## Upload Allen Human training notebook (Track A)
+	databricks workspace mkdirs $(dir $(NOTEBOOK_HUMAN_ALLEN_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_HUMAN_ALLEN_DEST) \
+		--file $(NOTEBOOK_HUMAN_ALLEN_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_HUMAN_ALLEN_DEST)"
+
+deploy-notebook-human-bigbrain: ## Upload BigBrain 9-class training notebook (Track B)
+	databricks workspace mkdirs $(dir $(NOTEBOOK_HUMAN_BB_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_HUMAN_BB_DEST) \
+		--file $(NOTEBOOK_HUMAN_BB_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_HUMAN_BB_DEST)"
+
 deploy-human-annotations: ## Upload human annotation data to Databricks workspace
 	@echo "=== Uploading human annotation data ==="
 	@echo ""
@@ -189,7 +211,7 @@ deploy-human-annotations: ## Upload human annotation data to Databricks workspac
 	@echo "  - developing_human_atlas/    (169 images + 169 SVGs)"
 	@echo "  - bigbrain/                  (NIfTI volumes + layer segmentation)"
 
-deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final ## Full deployment (wheel + all notebooks)
+deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-bigbrain ## Full deployment (wheel + all notebooks)
 	@echo ""
 	@echo "=== Deployment complete ==="
 	@echo ""
@@ -204,6 +226,8 @@ deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full
 	@echo "  - Pruned + multi-axis (Run 8):    $(NOTEBOOK_PRUNED_MA_DEST)"
 	@echo "  - Pruned ablation (Run 8a/8b):    $(NOTEBOOK_ABLATION_DEST)"
 	@echo "  - Final 200-epoch (Run 9):        $(NOTEBOOK_FINAL_DEST)"
+	@echo "  - Human Allen (Track A):          $(NOTEBOOK_HUMAN_ALLEN_DEST)"
+	@echo "  - Human BigBrain (Track B):       $(NOTEBOOK_HUMAN_BB_DEST)"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Open a notebook on Databricks"
