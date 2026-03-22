@@ -6,7 +6,7 @@
 
 We extend our DINOv2-Large + UperNet segmentation approach from the Allen Mouse Brain Atlas (1,328 classes, 79.1% mIoU) to human brain tissue using two complementary datasets: the Allen Human Brain Atlas (sparse SVG polygon annotations across 6 donors, Nissl stain) and the BigBrain 200μm classified volume (dense 9-class tissue segmentation, Merker stain). We evaluate three class granularities — 597 fine-grained structures, 44 depth-3 anatomical regions, and 10 tissue classes — to determine the optimal resolution for human brain segmentation with limited annotation density.
 
-Our principal finding is that annotation density, not model capacity, determines the performance ceiling. The depth-3 model (44 brain regions) achieves 65.5% center-crop mIoU and 99.4% pixel accuracy, with major structures (cerebellum, cerebral cortex, thalamus, pons) exceeding 99% IoU. The fine-grained 597-class model plateaus at ~27% mIoU despite 200 epochs of training, confirming that sparse polygon annotations (12 structures per image, 17–33% pixel coverage) cannot support per-structure learning at full ontological depth. The BigBrain 10-class tissue model achieves 60.8% mIoU with dense annotations on a single brain.
+Our principal finding is that annotation density, not model capacity, determines the performance ceiling. The depth-3 model (44 brain regions) achieves 65.5% validation center-crop mIoU and 65.0% test sliding-window mIoU (on all 634 held-out test images), with 99.1–99.4% pixel accuracy. Major structures (cerebellum, cerebral cortex, thalamus, pons) exceed 99% IoU on both validation and test donors. The fine-grained 597-class model plateaus at ~27% mIoU despite 200 epochs of training, confirming that sparse polygon annotations (12 structures per image, 17–33% pixel coverage) cannot support per-structure learning at full ontological depth. The BigBrain 10-class tissue model achieves 60.8% mIoU with dense annotations on a single brain.
 
 The training recipe established in the mouse ablation study — partial backbone unfreezing (last 4/24 blocks), differential learning rate (1e-5/1e-4), plain cross-entropy loss, minimal augmentation, 200 epochs — transfers directly to human tissue with no modifications, validating the recipe's generalizability across species, stains, and annotation methodologies.
 
@@ -162,11 +162,16 @@ All three tracks use the identical training recipe established in the mouse abla
 
 | Metric | Track A (597-class) | Track A-depth3 (44-class) | Track B (10-class) |
 |--------|---------------------|---------------------------|---------------------|
-| **CC mIoU** | 25.8% (50ep) / ~27% (117ep)* | **65.5%** | 60.8% |
-| **SW mIoU** | 21.0% (50ep) | 45.1% | **61.3%** |
-| **CC accuracy** | 63.8% (50ep) | **99.4%** | 90.0% |
-| **SW accuracy** | 75.9% (50ep) | **99.5%** | 93.7% |
-| Classes with valid IoU | 269/597 (45%) | 39/44 (89%) | 10/10 (100%) |
+| **CC mIoU (val)** | 25.8% (50ep) / ~27% (117ep)* | **65.5%** | 60.8% |
+| **CC mIoU (test)** | — | **61.8%** | — |
+| **SW mIoU (val)** | 21.0% (50ep) | 45.1%† | **61.3%** |
+| **SW mIoU (test)** | — | **65.0%** | — |
+| **CC accuracy (val)** | 63.8% (50ep) | **99.4%** | 90.0% |
+| **CC accuracy (test)** | — | **99.1%** | — |
+| **SW accuracy (val)** | 75.9% (50ep) | **99.5%** | 93.7% |
+| **SW accuracy (test)** | — | **98.9%** | — |
+| Valid classes (val CC / test CC) | 269/597 (45%) | 39/44 / 37/44 | 10/10 (100%) |
+| Valid classes (test SW) | — | 39/44 | — |
 | Training steps | 39,850 (50ep) | 159,400 (200ep) | 23,400 (200ep) |
 | Training time | 8.1 hrs (50ep) | 8.5 hrs | 74 min |
 | Final train loss | 0.90 (50ep) / 0.128 (200ep) | 0.128 | 0.342 |
@@ -175,6 +180,8 @@ All three tracks use the identical training recipe established in the mouse abla
 | Convergence | Plateaued ~27% at ep117 | Fully converged | Plateaued ~ep60 |
 
 *Track A 597-class: trained for 200 epochs; mIoU was monitored at epochs 50 (25.8%) and 117 (~27.3%) showing near-plateau. Full evaluation not performed as the model was not competitive with Track A-depth3.
+
+†Val SW mIoU (45.1%) was computed on only 50 of 641 validation images, covering only 27/44 classes. Test SW mIoU (65.0%) on all 634 test images provides the definitive sliding window result. See Section 4.3.
 
 ### 4.2 Track A: Fine-Grained 597-Class Model
 
@@ -225,7 +232,11 @@ Grouping the same 596 observed structure IDs into 44 depth-3 brain regions trans
 
 **Remaining failures.** The 5 classes below 5% IoU are sulci (cerebellar sulci 1.4%, parietal lobe sulci 16.2%, etc.) and small fiber tracts (central tegmental tract 10.7%). Sulci are thin, elongated structures that lose spatial detail when images are resized to 1,024 pixels for caching. Fiber tracts are rare and appear in few training images.
 
-**Sliding window gap.** The SW mIoU (45.1%) is 20.4 percentage points below CC mIoU (65.5%). This gap is larger than in the mouse study (SW was +4.4% above CC). The cause is different: mouse SW improves on CC because it covers edge structures invisible to center crops. Human SW degrades because (a) only 27/44 classes appear in the 50-image SW sample, (b) SW evaluates entire images including periphery where rare classes (sulci, small tracts) dominate and perform poorly, and (c) the resize to 1,024px loses fine boundary detail for small structures. The near-perfect accuracy (99.4–99.5%) confirms that dominant classes are correctly identified; the low SW mIoU reflects averaging over rare, poorly-performing classes.
+**Sliding window: validation subset artifact vs. test-set reality.** Validation SW mIoU (45.1%) appeared to be 20.4 percentage points below CC mIoU (65.5%), suggesting a puzzling gap — the opposite of the mouse study, where SW was +4.4% above CC. However, this gap was an artifact of the 50-image validation subset: only 27/44 classes appeared in those 50 images, and periphery-heavy rare classes (sulci, small tracts) were overrepresented relative to their true distribution.
+
+**Test-set evaluation confirms the mouse pattern.** On the held-out test donor (H0351.1015, all 634 images), the depth-3 model achieves **65.0% SW mIoU** — exceeding the test CC mIoU of 61.8% by **+3.2 percentage points**. This matches the mouse study's +4.4% SW-over-CC advantage and confirms the expected behavior: sliding window inference captures structures at image edges that center-crop misses. The 39/44 valid classes in test SW (vs 27/44 in the 50-image val SW subset) demonstrate that full-set evaluation is necessary for reliable SW metrics on sparse annotation datasets.
+
+**Test CC vs. validation CC.** The test CC mIoU (61.8%) is 3.7 percentage points below validation CC (65.5%), reflecting normal cross-donor generalization variance given that each split contains a single donor. The near-perfect test accuracy (CC 99.1%, SW 98.9%) confirms that the dominant brain regions are correctly identified on the unseen test donor. Top-performing test classes — cerebellum (99.98%), cerebral cortex (99.38%), inferior olivary complex (99.32%), thalamus (99.11%), pons (98.48%) — maintain the same ranking as on validation. The weakest test classes — cranial nerves (0.26%), hypothalamus (11.86%), occipital lobe sulci (12.48%) — are structures with limited training pixels and high inter-donor variability.
 
 ### 4.4 Track B: BigBrain 10-Class Tissue Model
 
@@ -327,7 +338,7 @@ The central methodological finding is that the mouse training recipe transfers t
 | Stain | Nissl (grayscale) | Nissl (color) | Merker (grayscale) |
 | Annotation | Dense 3D voxels | Sparse 2D polygons | Dense 3D voxels |
 | Subjects | 1 reference brain | 6 donors | 1 brain |
-| Best mIoU | 79.1% (SW, 671 classes) | 65.5% (CC, 44 classes) | 61.3% (SW, 10 classes) |
+| Best mIoU | 79.1% (SW, 671 classes) | 65.0% (test SW, 44 classes) | 61.3% (SW, 10 classes) |
 
 This suggests the recipe is robust and can serve as a starting point for other histological segmentation tasks. The key constraint is not the training procedure but the training data: annotation density per class determines the performance ceiling.
 
@@ -359,7 +370,7 @@ The model requires no post-processing for the primary use case of region identif
 
 ### Limitations
 
-1. **Sliding window subset for validation.** SW evaluation on the Allen tracks used only 50 of 641 validation images, introducing sampling variance in per-class SW mIoU estimates. The SW mIoU of 45.1% (vs 65.5% CC mIoU) partly reflects this limited sample: only 27/44 classes appeared in the 50-image SW subset, and rare classes (sulci, fiber tracts) that dominate the SW periphery are overrepresented relative to their true population frequency. Full-set SW evaluation on the test donor (634 images) provides a more robust estimate.
+1. **Sliding window subset for validation.** SW evaluation on the Allen tracks used only 50 of 641 validation images, introducing significant sampling bias. The val SW mIoU of 45.1% — 20.4 points below val CC mIoU (65.5%) — was misleading: only 27/44 classes appeared in the 50-image subset. Test-set SW evaluation on all 634 images of donor H0351.1015 yielded 65.0% SW mIoU, confirming that SW exceeds CC (+3.2%), consistent with the mouse study (+4.4%). Future work should evaluate SW on the full validation set to avoid this bias.
 
 2. **Single stain for target application.** The PhD collaborator will provide Nissl-stained tissue, matching the Allen training data. Generalization to other stains (H&E, immunohistochemistry) is untested. The BigBrain model (Merker stain) demonstrates that the architecture transfers across stains, but cross-stain inference without retraining is not validated.
 
@@ -375,20 +386,171 @@ The model requires no post-processing for the primary use case of region identif
 
 We demonstrate that the DINOv2-Large + UperNet training recipe established on 1,328 mouse brain structures transfers to human brain tissue across two datasets, three class granularities, and two staining protocols. The principal finding is that **annotation density per class, not model capacity or training recipe, determines the segmentation performance ceiling**.
 
-The optimal model for the target application (identifying brain regions in PhD tissue slides) is the **Allen depth-3 model (44 brain regions, 65.5% CC mIoU, 99.4% pixel accuracy)**. Major brain regions — cerebral cortex, cerebellum, thalamus, pons, cerebral nuclei, hypothalamus — are segmented at >90% IoU. The model can reliably answer the primary question: which major anatomical region does a tissue section represent?
+The optimal model for the target application (identifying brain regions in PhD tissue slides) is the **Allen depth-3 model (44 brain regions)**. On the held-out test donor (H0351.1015, 634 images), the model achieves **61.8% CC mIoU and 65.0% SW mIoU with 99.1% pixel accuracy**. Sliding window inference exceeds center-crop by +3.2%, matching the mouse study's +4.4% pattern and confirming that full-image tiling captures structures missed by center crops. Major brain regions — cerebral cortex, cerebellum, thalamus, pons, cerebral nuclei — are segmented at >98% test IoU. The model can reliably answer the primary question: which major anatomical region does a tissue section represent?
 
 **Complete training history:**
 
-| Track | Classes | Epochs | CC mIoU | SW mIoU | CC Acc | Training Time |
-|-------|---------|--------|---------|---------|--------|---------------|
-| A (fine-grained) | 597 | 200 | ~27%* | 21.0% (50ep) | ~63% | 8.1 hrs (50ep) |
-| **A-depth3 (coarse)** | **44** | **200** | **65.5%** | **45.1%** | **99.4%** | **8.5 hrs** |
-| B (tissue) | 10 | 200 | 60.8% | 61.3% | 90.0% | 74 min |
-| Mouse (reference) | 1,328 | 200 | 74.8% | 79.1% | 94.1% | 23.0 hrs |
+| Track | Classes | Epochs | CC mIoU (val / test) | SW mIoU (val / test) | CC Acc (val / test) | Training Time |
+|-------|---------|--------|----------------------|----------------------|---------------------|---------------|
+| A (fine-grained) | 597 | 200 | ~27%* / — | 21.0% (50ep) / — | ~63% / — | 8.1 hrs (50ep) |
+| **A-depth3 (coarse)** | **44** | **200** | **65.5% / 61.8%** | **45.1%† / 65.0%** | **99.4% / 99.1%** | **8.5 hrs** |
+| B (tissue) | 10 | 200 | 60.8% / — | 61.3% / — | 90.0% / — | 74 min |
+| Mouse (reference) | 1,328 | 200 | 74.8% / — | 79.1% / — | 94.1% / — | 23.0 hrs |
 
 *Estimated from epoch 117 checkpoint monitoring; formal evaluation not performed.
+†Val SW computed on 50/641 images (27/44 classes); test SW on all 634 images (39/44 classes) is the definitive result.
 
-**Future work.** (1) Run the full held-out test set evaluation on all models. (2) Cross-track pre-training: BigBrain → Allen fine-tune to combine dense tissue features with sparse structure labels. (3) Higher-resolution caching (2,048px) to recover performance on sulci and fiber tracts. (4) Mouse checkpoint initialization to test whether mouse brain features provide a better starting point than generic DINOv2 features for human tissue.
+**Future work.** (1) Cross-track pre-training: BigBrain → Allen fine-tune to combine dense tissue features with sparse structure labels. (2) Higher-resolution caching (2,048px) to recover performance on sulci and fiber tracts. (3) Mouse checkpoint initialization to test whether mouse brain features provide a better starting point than generic DINOv2 features for human tissue. (4) Test-set evaluation on the 597-class and BigBrain models to complete the cross-track comparison.
+
+---
+
+## 8. Code and Model Availability
+
+Source code, trained models, and all training notebooks are publicly available:
+
+**Repository:** https://github.com/Noel-Niko/histological-image-analysis
+
+**Trained models** are hosted on HuggingFace Hub and can be downloaded with a single command. No GPU is required for inference — the tool runs on CPU (10–30 seconds per image on a laptop). No Databricks, no IDE, no cloud services needed.
+
+### 8.1 Installation
+
+```bash
+git clone https://github.com/Noel-Niko/histological-image-analysis.git
+cd histological-image-analysis
+make install
+```
+
+Requires [uv](https://docs.astral.sh/uv/) (Python package manager) and Python >= 3.11.
+
+### 8.2 Download Models
+
+Download all models at once (~2.5 GB total, one-time):
+
+```bash
+make download-models
+```
+
+Or download individually to save disk space:
+
+```bash
+make download-models-mouse           # Mouse brain model (~1.2 GB, 1,328 structures)
+make download-models-human-allen     # Human brain regions model (~1.2 GB, 44 regions)
+make download-models-human-bigbrain  # Human tissue types model (~1.2 GB, 10 types)
+```
+
+### 8.3 Annotate Slides
+
+**Choose the command that matches your tissue and analysis goal:**
+
+| Your Tissue | What You Want to Identify | Command |
+|-------------|--------------------------|---------|
+| **Human** brain | 44 brain regions — cortex, thalamus, cerebellum, etc. | `make annotate-human-allen` |
+| **Human** brain | 10 tissue types — gray matter, white matter, CSF, etc. | `make annotate-human-bigbrain` |
+| **Mouse** brain | 1,328 anatomical structures | `make annotate-mouse` |
+
+The **human-allen** and **human-bigbrain** models answer different questions about the same tissue:
+- `annotate-human-allen` identifies *which brain region* (e.g., "cerebral cortex", "thalamus", "hippocampus")
+- `annotate-human-bigbrain` identifies *what tissue type* (e.g., "gray matter", "white matter", "CSF")
+
+Using a mouse model on human tissue (or vice versa) will produce incorrect results.
+
+**First time? Just run the command** — it will walk you through supported file types, ask for your folder path, and show a shortcut for next time:
+
+```bash
+make annotate-human-allen           # Guided mode — prompts for folder path
+make annotate-human-bigbrain        # Guided mode — tissue types
+make annotate-mouse                 # Guided mode — mouse structures
+```
+
+**Returning user?** Provide the path directly to skip the prompts:
+
+```bash
+make annotate-human-allen IMAGES=/path/to/slides/
+make annotate-human-bigbrain IMAGES=/path/to/slides/
+make annotate-mouse IMAGES=/path/to/slides/
+```
+
+### 8.4 Inference Modes
+
+Every model supports both center-crop and sliding window inference. Append `-sliding` to any command for sliding window mode:
+
+| Mode | Mouse | Human Allen (44 regions) | Human BigBrain (10 types) |
+|------|-------|--------------------------|---------------------------|
+| **Center-crop** (default) | `make annotate-mouse` | `make annotate-human-allen` | `make annotate-human-bigbrain` |
+| **Sliding window** | `make annotate-mouse-sliding` | `make annotate-human-allen-sliding` | `make annotate-human-bigbrain-sliding` |
+
+- **Center-crop** (default): Resizes entire image to 518×518, runs model once. Fast (~10–30 seconds per image on CPU).
+- **Sliding window**: Tiles at native resolution with 518×518 windows at 50% overlap, averages predictions in overlap regions. Slower but more accurate, especially for structures at image edges.
+
+The `IMAGES=` parameter works with sliding window commands as well:
+
+```bash
+make annotate-human-allen-sliding IMAGES=/path/to/slides/
+make annotate-human-bigbrain-sliding IMAGES=/path/to/slides/
+make annotate-mouse-sliding IMAGES=/path/to/slides/
+```
+
+### 8.5 Supported Image Formats
+
+| Format | Extensions |
+|--------|------------|
+| JPEG | `.jpg`, `.jpeg` |
+| PNG | `.png` |
+| TIFF | `.tif`, `.tiff` |
+| BMP | `.bmp` |
+
+**Image requirements:**
+- **Color mode:** RGB or grayscale — both work (grayscale is auto-converted to RGB)
+- **Resolution:** Any size — the model resizes internally
+- **Best results:** Nissl-stained histological sections, similar to Allen Brain Institute atlas images
+- **Whole-slide images:** Supported but slow on CPU. For VSI format (Olympus/Evident scanner), first export as JPEG or PNG using Bio-Formats or QuPath
+
+**NOT supported** (convert to PNG or TIFF first): DICOM (`.dcm`), NRRD (`.nrrd`), NIfTI (`.nii.gz`), PDF, SVG, WebP, HEIC. The tool warns about unsupported files before processing begins.
+
+### 8.6 Output
+
+For each input image, an annotated version appears in the **same folder**. Original files are never modified.
+
+```
+/path/to/slides/
+    slide_001.jpg                                        # Original (untouched)
+    slide_001-annotated-human-allen-20260322T143052.png  # NEW — annotated overlay
+    slide_002.tif                                        # Original (untouched)
+    slide_002-annotated-human-allen-20260322T143055.png  # NEW — annotated overlay
+    notes.txt                                            # Ignored (not an image)
+```
+
+Each annotated image contains:
+- The original image with a **semi-transparent color overlay** showing detected brain regions
+- **Contour lines** at region boundaries
+- A **legend panel** on the right listing the top 15 detected regions by area, with color swatches and percentage labels
+
+### 8.7 Compute Requirements
+
+| Hardware | Speed per Image |
+|----------|----------------|
+| **CPU only (laptop)** | ~10–30 seconds |
+| Laptop GPU (MX/GTX) | ~2–5 seconds |
+| Desktop GPU (RTX 3060+) | ~1–2 seconds |
+
+- **RAM:** 8 GB minimum, 16 GB recommended
+- **Disk:** ~1.2 GB per model + space for output images
+- **GPU:** Optional, auto-detected. Not required.
+
+### 8.8 Advanced Usage
+
+For raw segmentation masks and multi-panel visualizations (not overlays):
+
+```bash
+python scripts/run_inference.py --image-dir /path/to/slides/ --output inference_results/
+```
+
+All CLI options:
+
+```bash
+python scripts/annotate.py --help
+python scripts/run_inference.py --help
+```
 
 ---
 

@@ -38,7 +38,7 @@ NOTEBOOK_EVAL_D3_TEST_DEST   := $(WORKSPACE_BASE)/notebooks/eval_human_depth3_te
 NOTEBOOK_HUMAN_FIGURES_SRC   := notebooks/generate_human_paper_figures.ipynb
 NOTEBOOK_HUMAN_FIGURES_DEST  := $(WORKSPACE_BASE)/notebooks/generate_human_paper_figures
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy-notebook-eval-depth3-test deploy-notebook-human-figures deploy deploy-human-annotations validate help download-models download-models-mouse download-models-human-allen annotate-mouse annotate-human annotate-human-bigbrain annotate-mouse-sliding annotate-human-sliding annotate-human-bigbrain-sliding upload-models fetch-models-from-dbfs fetch-mouse-from-dbfs fetch-human-from-dbfs
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy-notebook-eval-depth3-test deploy-notebook-human-figures deploy deploy-human-annotations validate help download-models download-models-mouse download-models-human-allen annotate-mouse annotate-human-allen annotate-human-bigbrain annotate-mouse-sliding annotate-human-allen-sliding annotate-human-bigbrain-sliding upload-models fetch-models-from-dbfs fetch-mouse-from-dbfs fetch-human-from-dbfs
 
 # ── End-User Workflow ─────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ annotate-mouse: ## Annotate mouse brain images (guided mode, or set IMAGES=/path
 		uv run python scripts/annotate.py $(IMAGES); \
 	fi
 
-annotate-human: ## Annotate human tissue — 44 brain regions (guided mode, or set IMAGES=/path)
+annotate-human-allen: ## Annotate human tissue — Allen depth-3, 44 brain regions (guided mode, or set IMAGES=/path)
 	@if [ -z "$(IMAGES)" ]; then \
 		uv run python scripts/annotate.py --species human; \
 	else \
@@ -82,7 +82,7 @@ annotate-mouse-sliding: ## Annotate mouse with sliding window — slower, more a
 		uv run python scripts/annotate.py $(IMAGES) --sliding-window; \
 	fi
 
-annotate-human-sliding: ## Annotate human (44 regions) with sliding window (guided or IMAGES=/path)
+annotate-human-allen-sliding: ## Annotate human Allen (44 regions) with sliding window (guided or IMAGES=/path)
 	@if [ -z "$(IMAGES)" ]; then \
 		uv run python scripts/annotate.py --species human --sliding-window; \
 	else \

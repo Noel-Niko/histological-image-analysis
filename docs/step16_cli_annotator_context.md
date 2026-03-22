@@ -33,11 +33,11 @@ scripts/annotate.py          ← CLI entry point (argparse)
         │
         ├── histological_image_analysis/annotation.py
         │       create_annotated_overlay()  ← alpha-blend color overlay on original
-        │       build_annotated_filename()  ← {stem}-annotated-{timestamp}.png
+        │       build_annotated_filename()  ← {stem}-annotated-{species}-{timestamp}.png
         │       _draw_contours()            ← boundary lines between regions
         │       _draw_legend()              ← top-15 regions with color swatches
         │
-        └── Output: {stem}-annotated-{YYYYMMDDTHHMMSS}.png
+        └── Output: {stem}-annotated-{species}-{YYYYMMDDTHHMMSS}.png
             (saved in SAME folder as input, originals never modified)
 ```
 
@@ -84,7 +84,7 @@ All images are converted to RGB on load. Grayscale works. Output is always `.png
 | `tests/test_inference_module.py` | 14 tests for inference utilities |
 | `tests/test_annotate.py` | 16 tests for overlay + filename |
 | `tests/test_download_models.py` | 11 tests for download verification |
-| `Makefile` | User-facing commands: `annotate`, `annotate-human`, etc. |
+| `Makefile` | User-facing commands: `annotate-mouse`, `annotate-human-allen`, etc. |
 
 ---
 
@@ -98,12 +98,12 @@ make download-models-human-bigbrain        # Human BigBrain model only (~1.2 GB)
 
 make annotate-mouse                              # Mouse brain, guided mode
 make annotate-mouse IMAGES=/path                 # Mouse brain, direct mode
-make annotate-human                              # Human brain regions (44 classes), guided
-make annotate-human IMAGES=/path                 # Human brain regions, direct mode
+make annotate-human-allen                        # Human brain regions (44 classes), guided
+make annotate-human-allen IMAGES=/path           # Human brain regions, direct mode
 make annotate-human-bigbrain                     # Human tissue types (10 classes), guided
 make annotate-human-bigbrain IMAGES=/path        # Human tissue types, direct mode
 make annotate-mouse-sliding                      # Mouse, sliding window, guided
-make annotate-human-sliding                      # Human regions, sliding window, guided
+make annotate-human-allen-sliding                 # Human Allen regions, sliding window, guided
 make annotate-human-bigbrain-sliding             # Human tissue, sliding window, guided
 ```
 
@@ -129,7 +129,7 @@ make annotate-human-bigbrain-sliding             # Human tissue, sliding window,
    from 3D volume slicing. Improving the human model is a research priority.
 
 2. **No species auto-detection.**
-   The user must choose `make annotate-mouse` (mouse) or `make annotate-human` (human).
+   The user must choose `make annotate-mouse` (mouse) or `make annotate-human-allen` (human).
    There is no automatic detection of whether an image is mouse or human tissue.
    This could be added as a lightweight classifier in the future.
 

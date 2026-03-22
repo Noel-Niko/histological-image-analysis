@@ -39,11 +39,11 @@ make download-models-human-bigbrain  # Human tissue types model (~1.2 GB, 10 typ
 | Your tissue | What you want to identify | Command |
 |-------------|--------------------------|---------|
 | **Mouse** brain | 1,328 anatomical structures (79.1% mIoU) | `make annotate-mouse` |
-| **Human** brain | 44 brain regions — cortex, thalamus, etc. (65.5% mIoU) | `make annotate-human` |
+| **Human** brain | 44 brain regions — cortex, thalamus, etc. (65.5% mIoU) | `make annotate-human-allen` |
 | **Human** brain | 10 tissue types — gray matter, white matter, CSF, etc. (60.8% mIoU) | `make annotate-human-bigbrain` |
 
 The **human** and **human-bigbrain** models answer different questions about the same tissue:
-- `annotate-human` identifies *which brain region* (e.g., "cerebral cortex", "thalamus", "hippocampus")
+- `annotate-human-allen` identifies *which brain region* (e.g., "cerebral cortex", "thalamus", "hippocampus")
 - `annotate-human-bigbrain` identifies *what tissue type* (e.g., "gray matter", "white matter", "CSF")
 
 Using a mouse model on human tissue (or vice versa) will produce incorrect results.
@@ -53,7 +53,7 @@ ask for your folder path, and show a shortcut for next time:
 
 ```bash
 make annotate-mouse           # Mouse
-make annotate-human           # Human — brain regions
+make annotate-human-allen     # Human — 44 brain regions (Allen depth-3)
 make annotate-human-bigbrain  # Human — tissue types
 ```
 
@@ -61,7 +61,7 @@ make annotate-human-bigbrain  # Human — tissue types
 
 ```bash
 make annotate-mouse IMAGES=/Users/yourname/Desktop/mouse_slides/
-make annotate-human IMAGES=/Users/yourname/Desktop/human_slides/
+make annotate-human-allen IMAGES=/Users/yourname/Desktop/human_slides/
 make annotate-human-bigbrain IMAGES=/Users/yourname/Desktop/human_slides/
 ```
 
@@ -69,9 +69,9 @@ make annotate-human-bigbrain IMAGES=/Users/yourname/Desktop/human_slides/
 resolution instead of resizing to 518x518. Slower, but more accurate at image edges:
 
 ```bash
-make annotate-mouse-sliding IMAGES=/Users/yourname/Desktop/mouse_slides/
-make annotate-human-sliding IMAGES=/Users/yourname/Desktop/human_slides/
-make annotate-human-bigbrain-sliding IMAGES=/Users/yourname/Desktop/human_slides/
+make annotate-mouse-sliding IMAGES=/Users/yourname/Desktop/mouse_slides/                 # Mouse — 1,328 structures
+make annotate-human-allen-sliding IMAGES=/Users/yourname/Desktop/human_slides/
+make annotate-human-bigbrain-sliding IMAGES=/Users/yourname/Desktop/human_slides/        # Human BigBrain — 10 tissue types
 ```
 
 ### Supported image formats
@@ -105,12 +105,14 @@ Your original files are never modified.
 
 ```
 /Users/yourname/Desktop/brain_slides/
-    slide_001.jpg                              # Original (untouched)
-    slide_001-annotated-20260322T143052.png    # NEW — annotated overlay
-    slide_002.tif                              # Original (untouched)
-    slide_002-annotated-20260322T143055.png    # NEW — annotated overlay
-    notes.txt                                  # Ignored (not an image)
+    slide_001.jpg                                        # Original (untouched)
+    slide_001-annotated-mouse-20260322T143052.png        # NEW — annotated overlay
+    slide_002.tif                                        # Original (untouched)
+    slide_002-annotated-mouse-20260322T143055.png        # NEW — annotated overlay
+    notes.txt                                            # Ignored (not an image)
 ```
+
+The filename includes the model used (`mouse`, `human-allen`, or `human-bigbrain`) so you can tell which model produced each annotation.
 
 Each annotated image contains:
 - The original image with a **semi-transparent color overlay** showing detected brain regions
@@ -122,15 +124,20 @@ Each annotated image contains:
 | Model | Species | Classes | What it identifies | mIoU | Command |
 |-------|---------|---------|-------------------|------|---------|
 | Mouse (final) | Mouse | 1,328 | Anatomical brain structures | 79.1% | `make annotate-mouse` |
-| Human Allen depth-3 | Human | 44 | Brain regions (cortex, thalamus, etc.) | 65.5% | `make annotate-human` |
+| Human Allen depth-3 | Human | 44 | Brain regions (cortex, thalamus, etc.) | 65.5% | `make annotate-human-allen` |
 | Human BigBrain | Human | 10 | Tissue types (gray/white matter, CSF, etc.) | 60.8% | `make annotate-human-bigbrain` |
 
 ### Inference modes
 
-| Mode | Command | Description |
-|------|---------|-------------|
-| **Center-crop** (default) | `make annotate-mouse` | Fast. Resizes image to 518x518, runs once. |
-| **Sliding window** | `make annotate-mouse-sliding` | Slower but more accurate. Tiles at native resolution with 50% overlap. Better for structures at image edges. |
+Every model supports both inference modes. Append `-sliding` to any command for sliding window:
+
+| Mode | Mouse | Human Allen (44 regions) | Human BigBrain (10 types) |
+|------|-------|--------------------------|---------------------------|
+| **Center-crop** (default) | `make annotate-mouse` | `make annotate-human-allen` | `make annotate-human-bigbrain` |
+| **Sliding window** | `make annotate-mouse-sliding` | `make annotate-human-allen-sliding` | `make annotate-human-bigbrain-sliding` |
+
+- **Center-crop:** Fast. Resizes entire image to 518x518, runs model once.
+- **Sliding window:** Slower but more accurate. Tiles at native resolution with 50% overlap, averages predictions in overlap regions. Better for structures at image edges.
 
 ### Compute requirements
 

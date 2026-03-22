@@ -5,7 +5,7 @@ Annotate histological brain tissue images with detected brain regions.
 Produces a single annotated image per input file, showing the original image
 with a color overlay of segmented brain regions and a legend of detected structures.
 Output files are placed alongside the originals with the naming convention:
-    {stem}-annotated-{YYYYMMDDTHHMMSS}.png
+    {stem}-annotated-{species}-{YYYYMMDDTHHMMSS}.png
 
 Usage:
     # Guided mode (interactive prompts)
@@ -97,10 +97,10 @@ def _print_guided_header():
     print("-" * 40)
     print("For each input image, an annotated version is saved in the")
     print("SAME folder with the naming convention:")
-    print("  {name}-annotated-{timestamp}.png")
+    print("  {name}-annotated-{model}-{timestamp}.png")
     print()
     print("Example:")
-    print("  slide_001.jpg  -->  slide_001-annotated-20260322T143052.png")
+    print("  slide_001.jpg  -->  slide_001-annotated-mouse-20260322T143052.png")
     print()
 
 
@@ -164,7 +164,7 @@ def _print_shortcut_reminder(input_path: str, species: str, sliding_window: bool
     print("TIP: Next time, skip the prompts by running:")
     cmd = f"  make annotate-mouse IMAGES={input_path}"
     if species == "human":
-        cmd = f"  make annotate-human IMAGES={input_path}"
+        cmd = f"  make annotate-human-allen IMAGES={input_path}"
     elif species == "human-bigbrain":
         cmd = f"  make annotate-human-bigbrain IMAGES={input_path}"
     if sliding_window:
@@ -186,7 +186,7 @@ Examples:
 
 Output:
     Each input image gets a sibling file:
-    slide_001.jpg -> slide_001-annotated-20260322T143052.png
+    slide_001.jpg -> slide_001-annotated-mouse-20260322T143052.png
         """,
     )
 
@@ -314,7 +314,7 @@ Output:
         overlay = create_annotated_overlay(original, resized_prediction, id2label)
 
         # Save annotated image alongside original
-        output_path = build_annotated_filename(image_path)
+        output_path = build_annotated_filename(image_path, species=args.species)
         overlay.save(output_path)
 
         unique_classes = len(np.unique(resized_prediction)) - (1 if 0 in resized_prediction else 0)
