@@ -169,6 +169,7 @@ make deploy-wheel deploy-notebook-eval-depth3-test deploy-notebook-human-figures
 | 14.6 Three-track Figure 2 | COMPLETE | All 3 models (597/depth-3/BigBrain), same Allen images for A+B |
 | 14.7 Dead code cleanup | COMPLETE | Removed unused `render_track_rows` function from cell 4 |
 | 14.8 Paper test numbers | COMPLETE | Table 1, Section 4.3, Limitations, Conclusion, Abstract, Discussion updated with test results |
+| 14.9 VSI + domain gap in paper | COMPLETE | Expanded Practical Deployment with VSI resolution matching, added Limitation #6 (atlas-to-scanner gap), Future Work #1 (domain adaptation) |
 
 ---
 

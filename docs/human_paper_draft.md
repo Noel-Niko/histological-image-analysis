@@ -359,10 +359,28 @@ Based on the analysis, the most impactful improvements would be:
 The target application is identifying brain regions in novel Nissl-stained tissue sections from standard cover slips, prepared by a PhD collaborator. The deployment pipeline is:
 
 1. **Image acquisition.** Whole-slide images captured in VSI format (Olympus/Evident scanner).
-2. **Format conversion.** VSI → JPEG/PNG using Bio-Formats or QuPath export.
+
+2. **Format conversion and resolution matching.** VSI is a proprietary multi-series pyramid format. A typical VSI file contains 5–8 series: a macro overview, a label image, and multiple pyramid levels from full resolution (40×, ~0.25 µm/pixel) down to thumbnail. The pixel data resides not in the `.vsi` file itself but in companion `.ets` files within a sibling directory (`_[filename]_/`); both must be present for conversion. The Bio-Formats CLI (`bfconvert`) handles the conversion, but series and resolution selection is critical.
+
+   **Resolution mismatch.** The training data operates at macro scale: Allen Human images at ~40 µm/pixel effective resolution (~1.7K × 2.1K px whole-brain coronal sections), mouse CCFv3 at ~10 µm/pixel (~800 × 1,140 px), and BigBrain at 200 µm/pixel (~770 × 605 px). A 40× scanner slide at native resolution (~0.25 µm/pixel, 100,000+ pixels per side) shows cellular detail the model has never seen. Feeding full-resolution images to the model is both semantically wrong (wrong spatial scale) and computationally infeasible (the sliding-window logit buffer alone would require terabytes of memory at 50K+ pixels).
+
+   The conversion must downsample by approximately 20–80× from native scanner resolution to match the training data's spatial scale (~10–40 µm/pixel). The recommended workflow:
+
+   ```bash
+   make inspect-vsi IMAGES=/path/to/slides/       # List series, dimensions, pixel sizes
+   make convert-vsi IMAGES=/path/to/slides/ RESOLUTION=10  # Convert at ~10 µm/pixel
+   make annotate-human-allen IMAGES=/path/to/slides/       # Annotate converted TIFFs
+   ```
+
+   The `inspect-vsi` target runs Bio-Formats `showinf -nopix` to enumerate all series with their dimensions and physical pixel sizes, allowing the user to verify the correct pyramid level. The `convert-vsi` target selects the pyramid level closest to the target resolution (defaulting to ~10 µm/pixel), or extracts the lowest-resolution pyramid level and downsamples further if needed. At the target resolution, output files are <100 MB and the existing inference pipeline handles them without modification.
+
 3. **Orientation standardization.** Rotate all sections to consistent horizontal orientation to match the Allen training data. The model is orientation-specific (as demonstrated in the companion mouse paper: coronal 68.9% mIoU, axial 3.2%, sagittal 0.5%).
+
 4. **Inference.** Load the depth-3 model, resize to 1,024px max dimension, run sliding window inference (518×518 tiles, stride 259, 50% overlap) with fp16 on a single GPU.
+
 5. **Output.** Per-pixel region predictions across 44 depth-3 brain regions. Major regions (cerebral cortex, cerebellum, thalamus, pons, cerebral nuclei) are predicted at >98% IoU. Sulci and small fiber tracts are less reliable (1–35% IoU).
+
+**Expected domain gap.** The model was trained on atlas-quality images with consistent staining, controlled orientation, and no preparation artifacts. Real scanner slides will introduce tissue folds, tears, air bubbles, varying stain intensity across batches, and different color profiles per scanner. If the collaborator uses Nissl stain (matching the Allen training data), the domain gap should be manageable — initial validation on 3–5 converted slides is recommended before batch processing. If a different stain (H&E, immunohistochemistry) is used, a larger domain gap is expected and fine-tuning from the existing checkpoint is advisable (see Future Work).
 
 The model requires no post-processing for the primary use case of region identification. For boundary refinement, CRF smoothing or connected component filtering could be added as optional post-processing steps.
 
@@ -379,6 +397,8 @@ The model requires no post-processing for the primary use case of region identif
 4. **597-class model not formally evaluated at 200 epochs.** The fine-grained model completed the full 200-epoch training schedule, but formal CC+SW evaluation was intentionally omitted. The decision was based on monitoring during training: mIoU was 25.8% at epoch 50, ~25.0% at epoch 61, and ~27.3% at epoch 117 — a gain of only +1.5% over 67 additional epochs, with the gap to depth-3 (65.5%) too large to close. Training loss converged to 0.128, confirming the model learned the training distribution but could not generalize to the held-out donor at this class granularity.
 
 5. **Single validation/test donor per split.** Each split contains a single donor (val: H0351.1016, test: H0351.1015), so reported metrics reflect performance on one individual's brain morphology. True cross-donor generalization requires evaluation across multiple held-out donors, which the current 6-donor dataset cannot support without reducing training data.
+
+6. **Atlas-to-scanner domain gap.** All training data comes from atlas-quality preparations with standardized staining, sectioning, and imaging. Real-world whole-slide images from laboratory scanners introduce variability not represented in training: tissue preparation artifacts (folds, tears, air bubbles), batch-to-batch stain variation, scanner-specific color profiles, and potentially different staining protocols. The magnitude of this gap is untested. Initial validation on a small set of converted scanner slides is necessary before relying on model predictions for downstream analysis.
 
 ---
 
@@ -400,7 +420,7 @@ The optimal model for the target application (identifying brain regions in PhD t
 *Estimated from epoch 117 checkpoint monitoring; formal evaluation not performed.
 †Val SW computed on 50/641 images (27/44 classes); test SW on all 634 images (39/44 classes) is the definitive result.
 
-**Future work.** (1) Cross-track pre-training: BigBrain → Allen fine-tune to combine dense tissue features with sparse structure labels. (2) Higher-resolution caching (2,048px) to recover performance on sulci and fiber tracts. (3) Mouse checkpoint initialization to test whether mouse brain features provide a better starting point than generic DINOv2 features for human tissue. (4) Test-set evaluation on the 597-class and BigBrain models to complete the cross-track comparison.
+**Future work.** (1) **Domain adaptation for scanner slides.** The immediate practical next step is validating the depth-3 model on real Olympus/Evident VSI slides converted at ~10 µm/pixel resolution. If the atlas-to-scanner domain gap degrades predictions beyond usability, fine-tuning from the existing depth-3 checkpoint on a small set of manually annotated scanner slides (10–20 images with even partial region annotations) should recover performance — this is transfer learning from atlas → real tissue, not training from scratch, and requires far fewer annotations than the original training. The staining protocol is the primary factor: Nissl-stained scanner slides (matching the Allen training data) should transfer better than H&E or other protocols. (2) Cross-track pre-training: BigBrain → Allen fine-tune to combine dense tissue features with sparse structure labels. (3) Higher-resolution caching (2,048px) to recover performance on sulci and fiber tracts. (4) Mouse checkpoint initialization to test whether mouse brain features provide a better starting point than generic DINOv2 features for human tissue. (5) Test-set evaluation on the 597-class and BigBrain models to complete the cross-track comparison.
 
 ---
 

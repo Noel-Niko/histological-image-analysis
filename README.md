@@ -89,7 +89,8 @@ make annotate-human-bigbrain-sliding IMAGES=/Users/yourname/Desktop/human_slides
 - **Best results:** Nissl-stained histological sections, similar to Allen Brain Institute atlas images
 - **File size:** No limit, but very large files (e.g., whole-slide images > 50,000 px) will be slow on CPU
 
-**NOT supported** (convert these to PNG or TIFF first):
+**NOT supported** (convert these first):
+- **Olympus VSI** (`.vsi`) — see [Working with Olympus VSI files](#working-with-olympus-vsi-files) below
 - DICOM (`.dcm`) — use a DICOM viewer to export as PNG
 - NRRD (`.nrrd`) / NIfTI (`.nii.gz`) — 3D volumes, not 2D images
 - PDF / SVG — export as raster images
@@ -165,6 +166,51 @@ All CLI options:
 python scripts/annotate.py --help
 python scripts/run_inference.py --help
 ```
+
+### Working with Olympus VSI files
+
+If your images come from an Olympus/Evident microscope scanner (`.vsi` format), you need to
+convert them before annotation. VSI is a proprietary format that requires Bio-Formats (Java-based)
+to read.
+
+**Important:** VSI is a two-part format. Each `.vsi` file has a companion directory
+`_[filename]_/` containing `.ets` files with the actual pixel data. You must copy **both**
+the `.vsi` file and the companion directory together.
+
+**Setup (one-time):**
+
+```bash
+# Requires Java 11+ (check: java -version)
+make download-bioformats-cli    # Downloads Bio-Formats CLI tools (~40 MB)
+```
+
+**Inspect your VSI files** (see available resolution levels):
+
+```bash
+make inspect-vsi IMAGES=/path/to/slides/
+```
+
+**Convert and annotate:**
+
+```bash
+# Convert at ~10 µm/pixel (matches mouse model training data)
+make convert-vsi IMAGES=/path/to/slides/ RESOLUTION=10
+
+# Then annotate the converted TIFFs
+make annotate-mouse IMAGES=/path/to/slides/
+```
+
+The `RESOLUTION` parameter controls the target pixel size in µm/pixel. The converter
+automatically selects the pyramid level closest to your target. Lower values = higher
+resolution, larger files.
+
+| Target resolution | Use case | Typical output size |
+|-------------------|----------|---------------------|
+| `RESOLUTION=10` | Mouse brain (default, matches training data) | ~1000–3000 px |
+| `RESOLUTION=40` | Human Allen model | ~500–1000 px |
+| `RESOLUTION=200` | Human BigBrain model | ~100–300 px |
+
+**Disk space:** Converted TIFFs at the default resolution are typically <100 MB each.
 
 ### More info
 

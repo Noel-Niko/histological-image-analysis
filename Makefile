@@ -38,7 +38,7 @@ NOTEBOOK_EVAL_D3_TEST_DEST   := $(WORKSPACE_BASE)/notebooks/eval_human_depth3_te
 NOTEBOOK_HUMAN_FIGURES_SRC   := notebooks/generate_human_paper_figures.ipynb
 NOTEBOOK_HUMAN_FIGURES_DEST  := $(WORKSPACE_BASE)/notebooks/generate_human_paper_figures
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy-notebook-eval-depth3-test deploy-notebook-human-figures deploy deploy-human-annotations validate help download-models download-models-mouse download-models-human-allen annotate-mouse annotate-human-allen annotate-human-bigbrain annotate-mouse-sliding annotate-human-allen-sliding annotate-human-bigbrain-sliding upload-models fetch-models-from-dbfs fetch-mouse-from-dbfs fetch-human-from-dbfs
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy-notebook-eval-depth3-test deploy-notebook-human-figures deploy deploy-human-annotations validate help download-models download-models-mouse download-models-human-allen annotate-mouse annotate-human-allen annotate-human-bigbrain annotate-mouse-sliding annotate-human-allen-sliding annotate-human-bigbrain-sliding upload-models fetch-models-from-dbfs fetch-mouse-from-dbfs fetch-human-from-dbfs download-bioformats-cli inspect-vsi convert-vsi
 
 # ── End-User Workflow ─────────────────────────────────────────────────
 
@@ -95,6 +95,39 @@ annotate-human-bigbrain-sliding: ## Annotate human (10 tissue types) with slidin
 	else \
 		uv run python scripts/annotate.py $(IMAGES) --species human-bigbrain --sliding-window; \
 	fi
+
+# ── Olympus VSI Support ───────────────────────────────────────────────
+
+BFTOOLS_VERSION ?= 8.0.1
+BFTOOLS_URL     := https://downloads.openmicroscopy.org/bio-formats/$(BFTOOLS_VERSION)/artifacts/bftools.zip
+BFTOOLS_DIR     := tools/bftools
+RESOLUTION      ?= 10
+
+download-bioformats-cli: ## Download Bio-Formats CLI tools for VSI conversion (one-time, requires Java 11+)
+	@echo "=== Downloading Bio-Formats CLI tools (bftools $(BFTOOLS_VERSION)) ==="
+	@echo "Requires: Java 11+ (check with: java -version)"
+	@echo ""
+	mkdir -p tools
+	curl -fSL -o tools/bftools.zip "$(BFTOOLS_URL)"
+	cd tools && unzip -o bftools.zip && rm bftools.zip
+	chmod +x $(BFTOOLS_DIR)/showinf $(BFTOOLS_DIR)/bfconvert
+	@echo ""
+	@echo "Installed to $(BFTOOLS_DIR)/"
+	@echo "Next: make inspect-vsi IMAGES=/path/to/slides/"
+
+inspect-vsi: ## Inspect VSI files — show series, dimensions, pixel sizes (set IMAGES=/path)
+	@if [ -z "$(IMAGES)" ]; then \
+		echo "Usage: make inspect-vsi IMAGES=/path/to/slides/"; \
+		exit 1; \
+	fi
+	uv run python scripts/inspect_vsi.py $(IMAGES) --bftools-dir $(BFTOOLS_DIR)
+
+convert-vsi: ## Convert VSI files to TIFF at target resolution (set IMAGES=/path, RESOLUTION=10)
+	@if [ -z "$(IMAGES)" ]; then \
+		echo "Usage: make convert-vsi IMAGES=/path/to/slides/ RESOLUTION=10"; \
+		exit 1; \
+	fi
+	uv run python scripts/convert_vsi.py $(IMAGES) --resolution $(RESOLUTION) --bftools-dir $(BFTOOLS_DIR)
 
 upload-models: ## Upload models to HuggingFace Hub (one-time, requires HUGGING_FACE_TOKEN)
 	uv run python scripts/upload_to_hf.py
