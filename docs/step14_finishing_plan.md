@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-22
 **Depends on:** `docs/step13_human_training_plan.md` (COMPLETE), `docs/human_paper_draft.md`
-**Status:** IN PROGRESS — Step 14.1 running on Databricks. Step 14.5 COMPLETE. Next: redeploy + wait for test results.
+**Status:** IN PROGRESS — Step 14.1 running on Databricks. Steps 14.5 + 14.6 COMPLETE. Next: redeploy + wait for test results.
 
 ---
 
@@ -166,6 +166,28 @@ make deploy-wheel deploy-notebook-eval-depth3-test deploy-notebook-human-figures
 | 14.3 Paper draft improvements | COMPLETE | Practical Deployment subsection, expanded Limitations |
 | 14.4 Makefile + plan updates | COMPLETE | 2 new deploy targets added |
 | 14.5 Figure notebook review fixes | COMPLETE | All 6 issues fixed |
+| 14.6 Three-track Figure 2 | COMPLETE | All 3 models (597/depth-3/BigBrain), same Allen images for A+B |
+| 14.7 Dead code cleanup | COMPLETE | Removed unused `render_track_rows` function from cell 4 |
+
+---
+
+## Step 14.6: Three-Track Figure 2
+
+**File:** `notebooks/generate_human_paper_figures.ipynb` (EDIT)
+
+**Status:** COMPLETE
+
+**Changes:**
+- **Cell 1 (config):** Added `ALLEN_597_MODEL_DIR`, `BIGBRAIN_MODEL_DIR`, BigBrain volume paths
+- **Cell 2 (model loading):** Loads all 3 models (depth-3, 597-class, BigBrain) + BigBrain NIfTI volumes. Builds separate LUTs for 597-class and depth-3. `load_image_and_mask()` now accepts `lut_array` parameter.
+- **Cell 3 (Figure 2):** Three-track grid: 5 images × 3 tracks = 15 rows × 3 cols. Allen tracks A (597-class) and B (depth-3) show the SAME 5 val images with different class mappings. Track C (BigBrain) shows 5 val slices from NIfTI volume (grayscale → pseudo-RGB). Models loaded to GPU one at a time. Saved as JPEG. Color-coded track labels.
+- **Cell 8 (Summary):** Updated to `fig2_three_track_comparison.jpg`
+
+**Key design decisions:**
+- Allen tracks share identical images → directly shows granularity effect on same tissue
+- BigBrain uses pseudo-RGB (grayscale replicated to 3 channels) for shared `predict_center_crop()`
+- Models moved to GPU one at a time (load → infer → .cpu() → empty_cache()) to conserve memory
+- depth-3 model moved back to GPU at end of cell for Figure 5
 
 ---
 
@@ -177,5 +199,7 @@ make deploy-wheel deploy-notebook-eval-depth3-test deploy-notebook-human-figures
 4. ~~Edit `docs/human_paper_draft.md` with improvements~~ DONE
 5. ~~Update `docs/step13_human_training_plan.md` with Step 14 reference~~ DONE
 6. ~~Apply figure notebook review fixes (Step 14.5)~~ DONE
-7. Redeploy figure notebook to Databricks ← NEXT
-8. After test eval completes: update paper draft Table 1 + Conclusion with test numbers
+7. ~~Three-track Figure 2 (Step 14.6)~~ DONE
+8. ~~Dead code cleanup (removed unused `render_track_rows`)~~ DONE
+9. ~~Redeploy figure notebook to Databricks~~ DONE — all figures generated successfully
+10. After test eval completes: update paper draft Table 1 + Conclusion with test numbers ← NEXT

@@ -38,7 +38,7 @@ NOTEBOOK_EVAL_D3_TEST_DEST   := $(WORKSPACE_BASE)/notebooks/eval_human_depth3_te
 NOTEBOOK_HUMAN_FIGURES_SRC   := notebooks/generate_human_paper_figures.ipynb
 NOTEBOOK_HUMAN_FIGURES_DEST  := $(WORKSPACE_BASE)/notebooks/generate_human_paper_figures
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy-notebook-eval-depth3-test deploy-notebook-human-figures deploy deploy-human-annotations validate help download-models download-models-mouse download-models-human annotate annotate-human annotate-sliding upload-models fetch-models-from-dbfs fetch-mouse-from-dbfs fetch-human-from-dbfs
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy-notebook-eval-depth3-test deploy-notebook-human-figures deploy deploy-human-annotations validate help download-models download-models-mouse download-models-human-allen annotate-mouse annotate-human annotate-human-bigbrain annotate-mouse-sliding annotate-human-sliding annotate-human-bigbrain-sliding upload-models fetch-models-from-dbfs fetch-mouse-from-dbfs fetch-human-from-dbfs
 
 # ── End-User Workflow ─────────────────────────────────────────────────
 
@@ -48,44 +48,83 @@ download-models: ## Download all trained models from HuggingFace Hub (~2.5 GB)
 download-models-mouse: ## Download mouse brain model only (~1.2 GB)
 	uv run python scripts/download_models.py --species mouse
 
-download-models-human: ## Download human brain model only (~1.2 GB)
+download-models-human-allen: ## Download human Allen depth-3 brain model — 44 regions (~1.2 GB)
 	uv run python scripts/download_models.py --species human
 
-annotate: ## Annotate brain images (set IMAGES=/path/to/folder)
-	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate IMAGES=/path/to/slides" && exit 1)
-	uv run python scripts/annotate.py $(IMAGES)
+download-models-human-bigbrain: ## Download human BigBrain model — 10 tissue types (~1.2 GB)
+	uv run python scripts/download_models.py --species human-bigbrain
 
-annotate-human: ## Annotate with human brain model (set IMAGES=/path/to/folder)
-	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate-human IMAGES=/path/to/slides" && exit 1)
-	uv run python scripts/annotate.py $(IMAGES) --species human
+annotate-mouse: ## Annotate mouse brain images (guided mode, or set IMAGES=/path/to/folder)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES); \
+	fi
 
-annotate-sliding: ## Annotate with sliding window — slower, more accurate (set IMAGES=/path)
-	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path." && exit 1)
-	uv run python scripts/annotate.py $(IMAGES) --sliding-window
+annotate-human: ## Annotate human tissue — 44 brain regions (guided mode, or set IMAGES=/path)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py --species human; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES) --species human; \
+	fi
+
+annotate-human-bigbrain: ## Annotate human tissue — 10 tissue types (guided mode, or set IMAGES=/path)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py --species human-bigbrain; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES) --species human-bigbrain; \
+	fi
+
+annotate-mouse-sliding: ## Annotate mouse with sliding window — slower, more accurate (guided or IMAGES=/path)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py --sliding-window; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES) --sliding-window; \
+	fi
+
+annotate-human-sliding: ## Annotate human (44 regions) with sliding window (guided or IMAGES=/path)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py --species human --sliding-window; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES) --species human --sliding-window; \
+	fi
+
+annotate-human-bigbrain-sliding: ## Annotate human (10 tissue types) with sliding window (guided or IMAGES=/path)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py --species human-bigbrain --sliding-window; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES) --species human-bigbrain --sliding-window; \
+	fi
 
 upload-models: ## Upload models to HuggingFace Hub (one-time, requires HUGGING_FACE_TOKEN)
 	uv run python scripts/upload_to_hf.py
 
 # ── Databricks Model Download (developer only) ───────────────────────
 
-DBFS_MOUSE_MODEL  ?= dbfs:/FileStore/allen_brain_data/models/final-200ep
-DBFS_HUMAN_MODEL  ?= dbfs:/FileStore/allen_brain_data/models/human-allen-depth3
-LOCAL_MOUSE_MODEL := ./models/dinov2-upernet-final
-LOCAL_HUMAN_MODEL := ./models/human-depth3
+DBFS_MOUSE_MODEL          ?= dbfs:/FileStore/allen_brain_data/models/final-200ep
+DBFS_HUMAN_MODEL          ?= dbfs:/FileStore/allen_brain_data/models/human-allen-depth3
+DBFS_HUMAN_BIGBRAIN_MODEL ?= dbfs:/FileStore/allen_brain_data/models/human-bigbrain
+LOCAL_MOUSE_MODEL          := ./models/dinov2-upernet-final
+LOCAL_HUMAN_MODEL          := ./models/human-depth3
+LOCAL_HUMAN_BIGBRAIN_MODEL := ./models/human-bigbrain
 
-fetch-models-from-dbfs: ## Download models from Databricks DBFS to local (requires Databricks CLI)
+fetch-models-from-dbfs: ## Download all models from Databricks DBFS to local (requires Databricks CLI)
 	@echo "=== Downloading models from Databricks DBFS ==="
-	mkdir -p $(LOCAL_MOUSE_MODEL) $(LOCAL_HUMAN_MODEL)
+	mkdir -p $(LOCAL_MOUSE_MODEL) $(LOCAL_HUMAN_MODEL) $(LOCAL_HUMAN_BIGBRAIN_MODEL)
 	@echo ""
 	@echo "--- Mouse model (final-200ep, 1,328 classes) ---"
 	databricks fs cp -r $(DBFS_MOUSE_MODEL) $(LOCAL_MOUSE_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
 	@echo ""
-	@echo "--- Human model (depth-3, 44 classes) ---"
+	@echo "--- Human model (Allen depth-3, 44 classes) ---"
 	databricks fs cp -r $(DBFS_HUMAN_MODEL) $(LOCAL_HUMAN_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
 	@echo ""
+	@echo "--- Human BigBrain model (tissue classification, 10 classes) ---"
+	databricks fs cp -r $(DBFS_HUMAN_BIGBRAIN_MODEL) $(LOCAL_HUMAN_BIGBRAIN_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
+	@echo ""
 	@echo "=== Download complete ==="
-	@echo "  Mouse: $(LOCAL_MOUSE_MODEL)"
-	@echo "  Human: $(LOCAL_HUMAN_MODEL)"
+	@echo "  Mouse:          $(LOCAL_MOUSE_MODEL)"
+	@echo "  Human:          $(LOCAL_HUMAN_MODEL)"
+	@echo "  Human BigBrain: $(LOCAL_HUMAN_BIGBRAIN_MODEL)"
 	@echo ""
 	@echo "Next: make upload-models"
 
@@ -94,10 +133,15 @@ fetch-mouse-from-dbfs: ## Download mouse model from Databricks DBFS
 	databricks fs cp -r $(DBFS_MOUSE_MODEL) $(LOCAL_MOUSE_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
 	@echo "Mouse model downloaded to $(LOCAL_MOUSE_MODEL)"
 
-fetch-human-from-dbfs: ## Download human model from Databricks DBFS
+fetch-human-from-dbfs: ## Download human (Allen depth-3) model from Databricks DBFS
 	mkdir -p $(LOCAL_HUMAN_MODEL)
 	databricks fs cp -r $(DBFS_HUMAN_MODEL) $(LOCAL_HUMAN_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
 	@echo "Human model downloaded to $(LOCAL_HUMAN_MODEL)"
+
+fetch-human-bigbrain-from-dbfs: ## Download human (BigBrain tissue) model from Databricks DBFS
+	mkdir -p $(LOCAL_HUMAN_BIGBRAIN_MODEL)
+	databricks fs cp -r $(DBFS_HUMAN_BIGBRAIN_MODEL) $(LOCAL_HUMAN_BIGBRAIN_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
+	@echo "Human BigBrain model downloaded to $(LOCAL_HUMAN_BIGBRAIN_MODEL)"
 
 # ── Local Development ──────────────────────────────────────────────────
 

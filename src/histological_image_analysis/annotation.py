@@ -59,7 +59,7 @@ def resolve_model_path(
     Parameters
     ----------
     species : str
-        One of "mouse" or "human".
+        One of "mouse", "human", or "human-bigbrain".
     model_path : str, optional
         Explicit model path. If provided, returned unchanged.
 

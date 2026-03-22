@@ -179,6 +179,11 @@ class TestResolveModelPath:
         assert "models" in path
         assert "human" in path
 
+    def test_human_bigbrain_resolves_to_models_human_bigbrain(self):
+        path = resolve_model_path("human-bigbrain")
+        assert "models" in path
+        assert "human-bigbrain" in path
+
     def test_explicit_path_returned_unchanged(self):
         path = resolve_model_path("mouse", model_path="/custom/model")
         assert path == "/custom/model"

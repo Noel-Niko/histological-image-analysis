@@ -76,12 +76,18 @@ class TestResolveRepoIds:
         assert len(repos) == 1
         assert "human" in repos[0]
 
-    def test_all_returns_both(self):
+    def test_all_returns_all_three(self):
         repos = resolve_repo_ids("all")
-        assert len(repos) == 2
+        assert len(repos) == 3
         names = " ".join(repos)
         assert "mouse" in names
         assert "human" in names
+        assert "human-bigbrain" in names
+
+    def test_human_bigbrain(self):
+        repos = resolve_repo_ids("human-bigbrain")
+        assert len(repos) == 1
+        assert "human-bigbrain" in repos[0]
 
     def test_default_username_is_set(self):
         assert DEFAULT_HF_USERNAME == "Noel-Niko"
