@@ -51,17 +51,26 @@ download-models-mouse: ## Download mouse brain model only (~1.2 GB)
 download-models-human: ## Download human brain model only (~1.2 GB)
 	uv run python scripts/download_models.py --species human
 
-annotate: ## Annotate brain images (set IMAGES=/path/to/folder)
-	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate IMAGES=/path/to/slides" && exit 1)
-	uv run python scripts/annotate.py $(IMAGES)
+annotate: ## Annotate brain images (guided mode, or set IMAGES=/path/to/folder)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES); \
+	fi
 
-annotate-human: ## Annotate with human brain model (set IMAGES=/path/to/folder)
-	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate-human IMAGES=/path/to/slides" && exit 1)
-	uv run python scripts/annotate.py $(IMAGES) --species human
+annotate-human: ## Annotate with human brain model (guided mode, or set IMAGES=/path)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py --species human; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES) --species human; \
+	fi
 
-annotate-sliding: ## Annotate with sliding window — slower, more accurate (set IMAGES=/path)
-	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path." && exit 1)
-	uv run python scripts/annotate.py $(IMAGES) --sliding-window
+annotate-sliding: ## Annotate with sliding window — slower, more accurate (guided or IMAGES=/path)
+	@if [ -z "$(IMAGES)" ]; then \
+		uv run python scripts/annotate.py --sliding-window; \
+	else \
+		uv run python scripts/annotate.py $(IMAGES) --sliding-window; \
+	fi
 
 upload-models: ## Upload models to HuggingFace Hub (one-time, requires HUGGING_FACE_TOKEN)
 	uv run python scripts/upload_to_hf.py

@@ -4,9 +4,9 @@ Fine-tune DINOv2-Large + UperNet for semantic segmentation of brain structures i
 
 ---
 
-## Quick Start: Annotate Brain Images
+## Annotate Brain Images
 
-Annotate mouse or human brain tissue slides from the terminal — **no GPU, no Databricks, no IDE needed**.
+Annotate mouse or human brain tissue slides from the terminal — **no GPU, no Databricks, no IDE needed**. The tool identifies anatomical brain regions in Nissl-stained histological sections and produces color-coded overlays with a legend of detected structures.
 
 ### 1. Install
 
@@ -33,31 +33,82 @@ make download-models-human    # Human brain model only (~1.2 GB, 44 classes)
 
 ### 3. Annotate your images
 
+Run `make annotate` with no arguments for **guided mode** — it will walk you through
+supported file types, ask for your folder path, and show a shortcut command for next time:
+
 ```bash
-# Mouse brain tissue (default)
-make annotate IMAGES=/path/to/your/slides/
-
-# Human brain tissue
-make annotate-human IMAGES=/path/to/your/slides/
-
-# Higher accuracy (slower — sliding window)
-make annotate-sliding IMAGES=/path/to/your/slides/
+make annotate
 ```
+
+Or provide the path directly to skip the prompts:
+
+```bash
+make annotate IMAGES=/Users/yourname/Desktop/brain_slides/
+```
+
+For human brain tissue or higher-accuracy sliding window mode:
+
+```bash
+make annotate-human
+make annotate-sliding
+```
+
+### Supported image formats
+
+| Format | Extensions |
+|--------|------------|
+| JPEG | `.jpg`, `.jpeg` |
+| PNG | `.png` |
+| TIFF | `.tif`, `.tiff` |
+| BMP | `.bmp` |
+
+**Image requirements:**
+- **Color mode:** RGB or grayscale — both work (grayscale is auto-converted to RGB)
+- **Resolution:** Any size — the model resizes internally (518x518 for center-crop, or tiles at native resolution for sliding-window mode)
+- **Best results:** Nissl-stained histological sections, similar to Allen Brain Institute atlas images
+- **File size:** No limit, but very large files (e.g., whole-slide images > 50,000 px) will be slow on CPU
+
+**NOT supported** (convert these to PNG or TIFF first):
+- DICOM (`.dcm`) — use a DICOM viewer to export as PNG
+- NRRD (`.nrrd`) / NIfTI (`.nii.gz`) — 3D volumes, not 2D images
+- PDF / SVG — export as raster images
+- WebP, HEIC — re-save as JPEG or PNG
+
+When you point to a folder, the tool **immediately warns** about any files that will be
+skipped due to unsupported format, listing each one by name before processing begins.
 
 ### Output
 
-For each input image, an annotated version appears in the **same folder**:
+For each input image, an annotated version appears in the **same folder**.
+Your original files are never modified.
 
 ```
-your-slides/
-  slide_001.jpg                              # Original (untouched)
-  slide_001-annotated-20260322T143052.png    # Annotated overlay
-  slide_002.tif                              # Original
-  slide_002-annotated-20260322T143055.png    # Annotated overlay
+/Users/yourname/Desktop/brain_slides/
+    slide_001.jpg                              # Original (untouched)
+    slide_001-annotated-20260322T143052.png    # NEW — annotated overlay
+    slide_002.tif                              # Original (untouched)
+    slide_002-annotated-20260322T143055.png    # NEW — annotated overlay
+    notes.txt                                  # Ignored (not an image)
 ```
 
-Each annotated image shows color-coded brain regions overlaid on the original,
-with a legend identifying the detected structures.
+Each annotated image contains:
+- The original image with a **semi-transparent color overlay** showing detected brain regions
+- **Contour lines** at region boundaries
+- A **legend panel** on the right listing the top 15 detected regions by area, with color swatches and percentage labels
+
+### Available models
+
+| Model | Species | Classes | Accuracy (mIoU) | Command |
+|-------|---------|---------|-----------------|---------|
+| Mouse (final) | Mouse | 1,328 brain structures | 79.1% | `make annotate` |
+| Human (depth-3) | Human | 44 brain regions | 65.5% | `make annotate-human` |
+
+### Inference modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| **Center-crop** (default) | `make annotate` | Fast. Resizes image to 518x518, runs once. |
+| **Sliding window** | `make annotate-sliding` | Slower but more accurate. Tiles at native resolution with 50% overlap. Better for structures at image edges. |
 
 ### Compute requirements
 
@@ -67,17 +118,24 @@ with a legend identifying the detected structures.
 | Laptop GPU (MX/GTX) | ~2-5 seconds |
 | Desktop GPU (RTX 3060+) | ~1-2 seconds |
 
-RAM: 8 GB minimum, 16 GB recommended. Model size: ~1.2 GB per species.
+- **RAM:** 8 GB minimum, 16 GB recommended
+- **Disk:** ~1.2 GB per model + space for output images
+- **GPU:** Optional, auto-detected. Not required.
 
 ### Advanced usage
 
-For raw segmentation masks and multi-panel visualizations:
+For raw segmentation masks and multi-panel visualizations (not overlays):
 
 ```bash
 python scripts/run_inference.py --image-dir images/ --output inference_results/
 ```
 
-See `python scripts/annotate.py --help` and `python scripts/run_inference.py --help` for all options.
+All CLI options:
+
+```bash
+python scripts/annotate.py --help
+python scripts/run_inference.py --help
+```
 
 ### More info
 
