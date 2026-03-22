@@ -31,8 +31,10 @@ NOTEBOOK_HUMAN_ALLEN_SRC  := notebooks/finetune_human_allen.ipynb
 NOTEBOOK_HUMAN_ALLEN_DEST := $(WORKSPACE_BASE)/notebooks/finetune_human_allen
 NOTEBOOK_HUMAN_BB_SRC     := notebooks/finetune_human_bigbrain.ipynb
 NOTEBOOK_HUMAN_BB_DEST    := $(WORKSPACE_BASE)/notebooks/finetune_human_bigbrain
+NOTEBOOK_HUMAN_ALLEN_D3_SRC  := notebooks/finetune_human_allen_depth3.ipynb
+NOTEBOOK_HUMAN_ALLEN_D3_DEST := $(WORKSPACE_BASE)/notebooks/finetune_human_allen_depth3
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-bigbrain deploy deploy-human-annotations validate help
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy deploy-human-annotations validate help
 
 # ── Local Development ──────────────────────────────────────────────────
 
@@ -167,6 +169,15 @@ deploy-notebook-human-bigbrain: ## Upload BigBrain 9-class training notebook (Tr
 		--profile $(DATABRICKS_PROFILE)
 	@echo "Notebook uploaded to $(NOTEBOOK_HUMAN_BB_DEST)"
 
+deploy-notebook-human-allen-depth3: ## Upload Allen Human depth-3 training notebook (Track A-depth3)
+	databricks workspace mkdirs $(dir $(NOTEBOOK_HUMAN_ALLEN_D3_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_HUMAN_ALLEN_D3_DEST) \
+		--file $(NOTEBOOK_HUMAN_ALLEN_D3_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_HUMAN_ALLEN_D3_DEST)"
+
 deploy-human-annotations: ## Upload human annotation data to Databricks workspace
 	@echo "=== Uploading human annotation data ==="
 	@echo ""
@@ -211,7 +222,7 @@ deploy-human-annotations: ## Upload human annotation data to Databricks workspac
 	@echo "  - developing_human_atlas/    (169 images + 169 SVGs)"
 	@echo "  - bigbrain/                  (NIfTI volumes + layer segmentation)"
 
-deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-bigbrain ## Full deployment (wheel + all notebooks)
+deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain ## Full deployment (wheel + all notebooks)
 	@echo ""
 	@echo "=== Deployment complete ==="
 	@echo ""
@@ -227,6 +238,7 @@ deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full
 	@echo "  - Pruned ablation (Run 8a/8b):    $(NOTEBOOK_ABLATION_DEST)"
 	@echo "  - Final 200-epoch (Run 9):        $(NOTEBOOK_FINAL_DEST)"
 	@echo "  - Human Allen (Track A):          $(NOTEBOOK_HUMAN_ALLEN_DEST)"
+	@echo "  - Human Allen depth-3 (Track A):  $(NOTEBOOK_HUMAN_ALLEN_D3_DEST)"
 	@echo "  - Human BigBrain (Track B):       $(NOTEBOOK_HUMAN_BB_DEST)"
 	@echo ""
 	@echo "Next steps:"

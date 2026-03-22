@@ -738,6 +738,50 @@ nib.save(img, 'julich_brain_v29_bigbrain.nii.gz')
 
 ---
 
+## Training Results (2026-03-19 — 2026-03-20)
+
+### Models Trained
+
+Three segmentation models were trained on Databricks using DINOv2-Large + UperNet (Run 9 recipe: backbone LR 1e-5, head LR 1e-4, last 4 blocks unfrozen, batch 2×2, crop 518, CE loss with ignore_index=255):
+
+| Model | Data Source | Classes | Epochs | Training Time | Cache Build |
+|-------|-------------|---------|--------|---------------|-------------|
+| Allen 597-class | Allen Adult SectionImage SVGs (4,463) | 597 (present_mapping) | 50 (200 in progress) | 8.1 hrs (50ep) | 468 min |
+| Allen depth-3 | Allen Adult SectionImage SVGs (4,463) | 44 (depth-3 present) | 200 | 8.5 hrs | 496 min |
+| BigBrain 10-class | BigBrain 9-class classified volume | 10 | 200 | 74 min | N/A |
+
+### Results Summary
+
+| Metric | Allen 597-class (50ep) | Allen depth-3 (44 classes, 200ep) | BigBrain (10 classes, 200ep) |
+|--------|------------------------|-----------------------------------|-------------------------------|
+| CC mIoU | 25.8% | **65.5%** | 60.8% |
+| SW mIoU | 21.0% | 45.1% | **61.3%** |
+| CC accuracy | 63.8% | **99.4%** | 90.0% |
+| Classes with valid IoU | 269/597 (45%) | 39/44 (89%) | 10/10 (100%) |
+| Convergence | Still improving | Fully converged | Plateaued at ~ep60 |
+
+### Key Findings
+
+1. **Depth-3 mapping is the optimal granularity for Allen data.** The 44-class model achieves 65.5% CC mIoU — 2.5× better than the 597-class model (25.8%), and exceeds the BigBrain 10-class model (60.8%) despite having 4.4× more classes. Major brain regions (cerebral cortex, cerebellum, thalamus, pons, cerebral nuclei) all achieve >98% IoU.
+
+2. **597 classes is too granular for the available annotation density.** With ~12 structures per image and 17-33% pixel coverage, most of the 597 classes have too few training examples. Only 269/597 (45%) achieved valid IoU at 50 epochs. The model appears to plateau near 25% mIoU.
+
+3. **BigBrain 10-class provides the most consistent sliding window performance.** SW mIoU (61.3%) matches CC mIoU (60.8%) because the 10 tissue classes have uniform scale — they don't suffer from the small-structure problem that degrades SW eval for Allen models.
+
+4. **Allen models degrade on sliding window eval** (depth-3: -20.4%, 597-class: -4.9%) because resizing to 1024px max dimension loses boundary detail for small structures (sulci, fiber tracts, cranial nerves).
+
+5. **Pre-caching is essential for Allen training.** Without cache, training runs at 0.13 it/s (14 days for 200ep). With cache at 1024px, speed improves to 1.37-5.18 it/s. Cache build takes ~8 hrs (SVG rasterization at full resolution is the bottleneck).
+
+6. **Depth-3 class composition (44 present classes):** Background + cerebral cortex, cerebral nuclei, thalamus, subthalamus, epithalamus, hypothalamus, cerebellum, midbrain tegmentum, pretectal region, midbrain tectum, pons, telencephalic commissures, telencephalic white matter tracts, cerebellar white matter tracts, cranial nerves, frontal/parietal/temporal/occipital/limbic/insular/cerebellar lobe sulci, major divisions, lateral ventricle, third ventricle, fourth ventricle, and various brainstem nuclei and fiber tracts.
+
+### Implications for PhD Cover-Slip Use Case
+
+- **The depth-3 model is most practical for structure identification** — 44 recognizable brain regions covering cortex, subcortical nuclei, cerebellum, brainstem, ventricles, and white matter tracts.
+- **BigBrain 10-class model complements** by providing tissue-type classification (gray matter vs white matter vs CSF vs meninges etc.) applicable to any brain region.
+- **A two-stage pipeline** may be optimal: BigBrain model for tissue type → depth-3 Allen model for structure identification.
+
+---
+
 ## Anti-Patterns Avoided
 
 - ✅ Did NOT assume unavailability — queried all 25 atlas IDs, tested multiple query formats
