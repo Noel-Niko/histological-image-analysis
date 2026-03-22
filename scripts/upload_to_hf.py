@@ -77,7 +77,7 @@ git clone https://github.com/your-repo/histological-image-analysis
 cd histological-image-analysis
 make install
 make download-models
-make annotate IMAGES=/path/to/your/slides/
+make annotate-mouse IMAGES=/path/to/your/slides/
 ```
 
 ## Citation
@@ -152,10 +152,16 @@ def upload_model(
             "data_source": "CCFv3 10um Nissl staining",
         },
         "human": {
-            "species_title": "Human Brain",
+            "species_title": "Human Brain (Allen Depth-3)",
             "species": "human",
-            "num_classes": "44 (depth-3)",
+            "num_classes": "44 (depth-3 brain regions)",
             "data_source": "Human Brain Atlas (6 donors, Nissl staining)",
+        },
+        "human-bigbrain": {
+            "species_title": "Human Brain (BigBrain Tissue Classification)",
+            "species": "human",
+            "num_classes": "10 (tissue types)",
+            "data_source": "BigBrain 3D histological volume (200um, 9-class tissue classification)",
         },
     }
     config = species_config.get(species, species_config["mouse"])
@@ -186,7 +192,7 @@ Requires HUGGING_FACE_TOKEN environment variable with write access.
     parser.add_argument(
         "--species",
         type=str,
-        choices=["mouse", "human", "all"],
+        choices=["mouse", "human", "human-bigbrain", "all"],
         default="all",
         help="Which model(s) to upload (default: all)",
     )
@@ -200,7 +206,13 @@ Requires HUGGING_FACE_TOKEN environment variable with write access.
         "--human-model",
         type=str,
         default="./models/human-depth3",
-        help="Path to human model directory",
+        help="Path to human (Allen depth-3) model directory",
+    )
+    parser.add_argument(
+        "--human-bigbrain-model",
+        type=str,
+        default="./models/human-bigbrain",
+        help="Path to human (BigBrain tissue) model directory",
     )
     parser.add_argument(
         "--hf-username",
@@ -231,6 +243,9 @@ Requires HUGGING_FACE_TOKEN environment variable with write access.
     if args.species in ("human", "all"):
         repo_id = f"{args.hf_username}/{args.model_base}-human"
         uploads.append(("human", args.human_model, repo_id))
+    if args.species in ("human-bigbrain", "all"):
+        repo_id = f"{args.hf_username}/{args.model_base}-human-bigbrain"
+        uploads.append(("human-bigbrain", args.human_bigbrain_model, repo_id))
 
     print("=" * 60)
     print("HuggingFace Hub Model Upload")

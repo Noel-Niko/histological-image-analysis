@@ -11,7 +11,7 @@ Annotate mouse or human brain tissue slides from the terminal — **no GPU, no D
 ### 1. Install
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Noel-Niko/histological-image-analysis.git
 cd histological-image-analysis
 make install
 ```
@@ -27,30 +27,51 @@ make download-models
 Or download individually:
 
 ```bash
-make download-models-mouse    # Mouse brain model only (~1.2 GB, 1,328 classes)
-make download-models-human    # Human brain model only (~1.2 GB, 44 classes)
+make download-models-mouse           # Mouse brain model (~1.2 GB, 1,328 structures)
+make download-models-human-allen     # Human brain regions model (~1.2 GB, 44 regions)
+make download-models-human-bigbrain  # Human tissue types model (~1.2 GB, 10 types)
 ```
 
 ### 3. Annotate your images
 
-Run `make annotate` with no arguments for **guided mode** — it will walk you through
-supported file types, ask for your folder path, and show a shortcut command for next time:
+**Choose the command that matches your tissue and analysis goal:**
+
+| Your tissue | What you want to identify | Command |
+|-------------|--------------------------|---------|
+| **Mouse** brain | 1,328 anatomical structures (79.1% mIoU) | `make annotate-mouse` |
+| **Human** brain | 44 brain regions — cortex, thalamus, etc. (65.5% mIoU) | `make annotate-human` |
+| **Human** brain | 10 tissue types — gray matter, white matter, CSF, etc. (60.8% mIoU) | `make annotate-human-bigbrain` |
+
+The **human** and **human-bigbrain** models answer different questions about the same tissue:
+- `annotate-human` identifies *which brain region* (e.g., "cerebral cortex", "thalamus", "hippocampus")
+- `annotate-human-bigbrain` identifies *what tissue type* (e.g., "gray matter", "white matter", "CSF")
+
+Using a mouse model on human tissue (or vice versa) will produce incorrect results.
+
+**First time? Just run the command** — it will walk you through supported file types,
+ask for your folder path, and show a shortcut for next time:
 
 ```bash
-make annotate
+make annotate-mouse           # Mouse
+make annotate-human           # Human — brain regions
+make annotate-human-bigbrain  # Human — tissue types
 ```
 
-Or provide the path directly to skip the prompts:
+**Returning user?** Provide the path directly to skip the prompts:
 
 ```bash
-make annotate IMAGES=/Users/yourname/Desktop/brain_slides/
+make annotate-mouse IMAGES=/Users/yourname/Desktop/mouse_slides/
+make annotate-human IMAGES=/Users/yourname/Desktop/human_slides/
+make annotate-human-bigbrain IMAGES=/Users/yourname/Desktop/human_slides/
 ```
 
-For human brain tissue or higher-accuracy sliding window mode:
+**Want higher accuracy?** Sliding window mode tiles across the full image at native
+resolution instead of resizing to 518x518. Slower, but more accurate at image edges:
 
 ```bash
-make annotate-human
-make annotate-sliding
+make annotate-mouse-sliding IMAGES=/Users/yourname/Desktop/mouse_slides/
+make annotate-human-sliding IMAGES=/Users/yourname/Desktop/human_slides/
+make annotate-human-bigbrain-sliding IMAGES=/Users/yourname/Desktop/human_slides/
 ```
 
 ### Supported image formats
@@ -98,17 +119,18 @@ Each annotated image contains:
 
 ### Available models
 
-| Model | Species | Classes | Accuracy (mIoU) | Command |
-|-------|---------|---------|-----------------|---------|
-| Mouse (final) | Mouse | 1,328 brain structures | 79.1% | `make annotate` |
-| Human (depth-3) | Human | 44 brain regions | 65.5% | `make annotate-human` |
+| Model | Species | Classes | What it identifies | mIoU | Command |
+|-------|---------|---------|-------------------|------|---------|
+| Mouse (final) | Mouse | 1,328 | Anatomical brain structures | 79.1% | `make annotate-mouse` |
+| Human Allen depth-3 | Human | 44 | Brain regions (cortex, thalamus, etc.) | 65.5% | `make annotate-human` |
+| Human BigBrain | Human | 10 | Tissue types (gray/white matter, CSF, etc.) | 60.8% | `make annotate-human-bigbrain` |
 
 ### Inference modes
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| **Center-crop** (default) | `make annotate` | Fast. Resizes image to 518x518, runs once. |
-| **Sliding window** | `make annotate-sliding` | Slower but more accurate. Tiles at native resolution with 50% overlap. Better for structures at image edges. |
+| **Center-crop** (default) | `make annotate-mouse` | Fast. Resizes image to 518x518, runs once. |
+| **Sliding window** | `make annotate-mouse-sliding` | Slower but more accurate. Tiles at native resolution with 50% overlap. Better for structures at image edges. |
 
 ### Compute requirements
 
@@ -179,7 +201,7 @@ databricks auth profiles
 
 ```bash
 # Clone and install
-git clone <repo-url>
+git clone https://github.com/Noel-Niko/histological-image-analysis.git
 cd histological-image-analysis
 cp .env.example .env        # Edit with your values
 make install                # uv sync --all-extras
@@ -366,15 +388,78 @@ histological-image-analysis/
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Data
+## Training Data Sources
 
-Training data comes from the Allen Brain Institute CCFv3 (Common Coordinate Framework v3):
+All models are trained on publicly available neuroanatomical atlas data. No proprietary data is used.
 
-- **Image volume:** `ara_nissl_10.nrrd` -- 1320 coronal slices of Nissl-stained mouse brain at 10µm (float32, 1320x800x1140)
-- **Annotation volume:** `annotation_10.nrrd` -- per-voxel structure IDs, 672 unique structures (uint32)
-- **Ontology:** `structure_graph_1.json` -- hierarchical structure tree (1,327 structures)
+### Mouse model — Allen Brain CCFv3
 
-Data was downloaded locally via `scripts/download_allen_data.py` and uploaded to Databricks Workspace/DBFS. See `docs/step5_6_completion_report.md` for details.
+The mouse model is trained on the [Allen Mouse Brain Common Coordinate Framework v3](https://mouse.brain-map.org/) (CCFv3), provided by the Allen Institute for Brain Science.
+
+| Dataset | File | Size | Resolution | Format | Description |
+|---------|------|------|------------|--------|-------------|
+| Nissl image volume | `ara_nissl_10.nrrd` | 2.17 GB | 10µm isotropic | NRRD float32 | 1,320 coronal slices of Nissl-stained mouse brain (1320×800×1140 voxels) |
+| Annotation volume | `annotation_10.nrrd` | 33 MB | 10µm isotropic | NRRD uint32 | Per-voxel structure IDs — 672 unique structures observed |
+| Structure ontology | `structure_graph_1.json` | 880 KB | — | JSON | Hierarchical tree of 1,327 brain structures |
+
+- **Species:** Mouse (P56)
+- **Stain:** Nissl (cell body, grayscale)
+- **Annotation density:** 100% — every voxel has a structure label
+- **Training split:** 1,016 train / 127 val / 127 test (interleaved every 10 slices along AP axis)
+- **Classes:** 1,328 (1,327 structures + background)
+- **Download:** `scripts/download_allen_data.py` or direct from https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/
+
+**Citation:** Allen Institute for Brain Science. Allen Mouse Brain Atlas — Common Coordinate Framework v3. https://atlas.brain-map.org
+
+### Human Allen model — Allen Human Brain Atlas
+
+The human region model is trained on the [Allen Human Brain Atlas](https://human.brain-map.org/) Nissl-stained section images with SVG structure annotations, mapped to depth-3 of the ontology hierarchy (44 classes).
+
+| Dataset | Source | Count | Description |
+|---------|--------|-------|-------------|
+| Section images | 6 post-mortem donors | 14,566 total | Nissl-stained coronal sections (JPEG, ~1.7K×2.1K px at downsample=4) |
+| SVG annotations | ISH sampling regions | 4,463 annotated | Polygon paths marking brain structures (~12 structures per image, 17–33% pixel coverage) |
+| Structure ontology | Graph 10 | 1,839 structures | Adult human brain hierarchy (depth-3 mapping collapses to 44 classes) |
+
+- **Species:** Human (adult, 6 donors)
+- **Stain:** Nissl (cell body, color photography)
+- **Annotation density:** Sparse — 17–33% of pixels labeled per image (ISH sampling regions only)
+- **Training split:** ~3,500 annotated images from 4 donors (train) / held-out donors (val/test)
+- **Classes:** 44 brain regions at ontology depth 3
+- **API:** https://api.brain-map.org/api/v2/ (section images + SVG downloads)
+
+**Citation:** Hawrylycz, M. J., Lein, E. S., Guillozet-Bongaarts, A. L., et al. (2012). An anatomically comprehensive atlas of the adult human brain transcriptome. *Nature*, 489(7416), 391–399. https://human.brain-map.org
+
+### Human BigBrain model — BigBrain 3D Volume
+
+The BigBrain tissue model is trained on the [BigBrain](https://bigbrainproject.org/) ultra-high-resolution 3D human brain volume with voxel-level tissue classification.
+
+| Dataset | File | Size | Resolution | Format | Description |
+|---------|------|------|------------|--------|-------------|
+| Tissue classification | `full_cls_200um_9classes.nii.gz` | 16 MB | 200µm isotropic | NIfTI gzip | 9-class tissue segmentation (696×770×605 voxels) |
+| Histological volume | `full8_200um_optbal.nii.gz` | 74 MB | 200µm isotropic | NIfTI gzip | Grayscale intensity volume (696×770×605 voxels) |
+
+- **Species:** Human (single 65-year-old post-mortem specimen)
+- **Stain:** Merker silver stain (cell body, grayscale — different from Nissl)
+- **Annotation density:** 100% of non-background voxels (35.1% of total volume is brain tissue)
+- **Training split:** 468 train / 59 val / 59 test (interleaved every 10 slices, 1mm gaps)
+- **Classes:** 10 (9 tissue types + background): gray matter, white matter, CSF, meninges, blood vessels, bone, muscle, artifact, other
+- **Download:** https://ftp.bigbrainproject.org/bigbrain-ftp/BigBrainRelease.2015/
+
+**Citation:** Amunts, K., Lepage, C., Borgeat, L., et al. (2013). BigBrain: An ultrahigh-resolution 3D human brain model. *Science*, 340(6139), 1472–1475. https://bigbrainproject.org
+
+### Data source comparison
+
+| Property | Mouse (CCFv3) | Human (Allen Atlas) | Human (BigBrain) |
+|----------|--------------|--------------------|--------------------|
+| Annotation type | Dense 3D volume | Sparse 2D SVG polygons | Dense 3D volume |
+| Pixel coverage | 100% | 17–33% | 35% (non-background) |
+| Stain | Nissl (gray) | Nissl (color) | Merker silver (gray) |
+| Resolution | 10µm | ~1.7K×2.1K px per section | 200µm |
+| Specimens | 1 reference brain | 6 donors | 1 specimen |
+| Anatomical plane | Coronal only | Coronal only | Coronal only |
+
+Data was downloaded locally via `scripts/download_allen_data.py` and uploaded to Databricks Workspace/DBFS for training. See `docs/step5_6_completion_report.md` for details.
 
 ## References
 

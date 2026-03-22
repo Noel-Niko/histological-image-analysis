@@ -87,8 +87,9 @@ def main():
 Models are downloaded from HuggingFace Hub to the local models/ directory.
 
 Default repos:
-  Mouse: {DEFAULT_HF_USERNAME}/{DEFAULT_MODEL_BASE}-mouse
-  Human: {DEFAULT_HF_USERNAME}/{DEFAULT_MODEL_BASE}-human
+  Mouse:          {DEFAULT_HF_USERNAME}/{DEFAULT_MODEL_BASE}-mouse
+  Human:          {DEFAULT_HF_USERNAME}/{DEFAULT_MODEL_BASE}-human
+  Human BigBrain: {DEFAULT_HF_USERNAME}/{DEFAULT_MODEL_BASE}-human-bigbrain
 
 After downloading, annotate images with:
   python scripts/annotate.py /path/to/slides/
@@ -98,7 +99,7 @@ After downloading, annotate images with:
     parser.add_argument(
         "--species",
         type=str,
-        choices=["mouse", "human", "all"],
+        choices=["mouse", "human", "human-bigbrain", "all"],
         default="all",
         help="Which model(s) to download (default: all)",
     )
@@ -147,7 +148,7 @@ After downloading, annotate images with:
     if success_count == len(repo_ids):
         print(f"All {success_count} model(s) downloaded successfully!")
         print("\nNext step: annotate your brain images:")
-        print("  make annotate IMAGES=/path/to/slides/")
+        print("  make annotate-mouse IMAGES=/path/to/slides/")
     else:
         print(f"WARNING: {len(repo_ids) - success_count} download(s) failed")
         sys.exit(1)

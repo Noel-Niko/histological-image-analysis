@@ -167,6 +167,7 @@ make deploy-wheel deploy-notebook-eval-depth3-test deploy-notebook-human-figures
 | 14.4 Makefile + plan updates | COMPLETE | 2 new deploy targets added |
 | 14.5 Figure notebook review fixes | COMPLETE | All 6 issues fixed |
 | 14.6 Three-track Figure 2 | COMPLETE | All 3 models (597/depth-3/BigBrain), same Allen images for A+B |
+| 14.7 Dead code cleanup | COMPLETE | Removed unused `render_track_rows` function from cell 4 |
 
 ---
 
@@ -199,5 +200,6 @@ make deploy-wheel deploy-notebook-eval-depth3-test deploy-notebook-human-figures
 5. ~~Update `docs/step13_human_training_plan.md` with Step 14 reference~~ DONE
 6. ~~Apply figure notebook review fixes (Step 14.5)~~ DONE
 7. ~~Three-track Figure 2 (Step 14.6)~~ DONE
-8. Redeploy figure notebook to Databricks ← NEXT
-9. After test eval completes: update paper draft Table 1 + Conclusion with test numbers
+8. ~~Dead code cleanup (removed unused `render_track_rows`)~~ DONE
+9. ~~Redeploy figure notebook to Databricks~~ DONE — all figures generated successfully
+10. After test eval completes: update paper draft Table 1 + Conclusion with test numbers ← NEXT

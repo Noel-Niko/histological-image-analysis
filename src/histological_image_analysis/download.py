@@ -46,6 +46,7 @@ def resolve_repo_ids(
         return [
             f"{hf_username}/{model_base}-mouse",
             f"{hf_username}/{model_base}-human",
+            f"{hf_username}/{model_base}-human-bigbrain",
         ]
     return [f"{hf_username}/{model_base}-{species}"]
 

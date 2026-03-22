@@ -6,7 +6,7 @@ Allow a PhD researcher to annotate mouse or human brain tissue slides from the t
 
 ```bash
 make download-models          # 1. Download models locally (one-time)
-make annotate IMAGES=/path    # 2. Annotate images
+make annotate-mouse IMAGES=/path    # 2. Annotate images
 ```
 
 Output: each input file gets a sibling file `{stem}-annotated-{YYYYMMDDTHHMMSS}.png` in the same directory, showing the original image with a color overlay of detected brain regions and a legend.
@@ -170,18 +170,18 @@ download-models: ## Download trained models from HuggingFace Hub (~2.5 GB)
 download-models-mouse: ## Download mouse brain model only (~1.2 GB)
 	uv run python scripts/download_models.py --species mouse
 
-download-models-human: ## Download human brain model only (~1.2 GB)
+download-models-human-allen: ## Download human Allen depth-3 model only (~1.2 GB)
 	uv run python scripts/download_models.py --species human
 
-annotate: ## Annotate brain images (set IMAGES=/path/to/folder)
-	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate IMAGES=/path/to/slides" && exit 1)
+annotate-mouse: ## Annotate mouse brain images (set IMAGES=/path/to/folder)
+	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate-mouse IMAGES=/path/to/slides" && exit 1)
 	uv run python scripts/annotate.py $(IMAGES)
 
 annotate-human: ## Annotate with human model (set IMAGES=/path/to/folder)
 	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate-human IMAGES=/path/to/slides" && exit 1)
 	uv run python scripts/annotate.py $(IMAGES) --species human
 
-annotate-sliding: ## Annotate with sliding window (slower, more accurate)
+annotate-mouse-sliding: ## Annotate mouse with sliding window (slower, more accurate)
 	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path." && exit 1)
 	uv run python scripts/annotate.py $(IMAGES) --sliding-window
 ```
@@ -242,13 +242,13 @@ make download-models
 
 ```bash
 # Mouse brain tissue (default)
-make annotate IMAGES=/path/to/your/slides/
+make annotate-mouse IMAGES=/path/to/your/slides/
 
 # Human brain tissue
 make annotate-human IMAGES=/path/to/your/slides/
 
 # Higher accuracy (slower — sliding window)
-make annotate-sliding IMAGES=/path/to/your/slides/
+make annotate-mouse-sliding IMAGES=/path/to/your/slides/
 ```
 
 ### Output
@@ -281,7 +281,7 @@ with a legend identifying the detected structures.
 | **Create** | `tests/test_inference_module.py` | Shared inference module tests |
 | **Create** | `tests/test_download_models.py` | Download/verification tests |
 | **Edit** | `scripts/run_inference.py` | Refactor to import from `inference.py` |
-| **Edit** | `Makefile` | Add `download-models`, `annotate`, `annotate-human`, `annotate-sliding` targets |
+| **Edit** | `Makefile` | Add `download-models`, `annotate-mouse`, `annotate-human`, `annotate-mouse-sliding` targets |
 | **Edit** | `.env.example` | Add `HF_REPO_ID` |
 | **Edit** | `pyproject.toml` | Add `tqdm` to explicit deps (currently transitive) |
 | **Edit** | `README.md` | Updated quick-start section |
@@ -324,7 +324,7 @@ with a legend identifying the detected structures.
 - [x] Step 6: Create `scripts/annotate.py`
 - [x] Step 7: Create `scripts/download_models.py`
 - [x] Step 8: Create `scripts/upload_to_hf.py`
-- [x] Step 9: Makefile targets (`download-models`, `annotate`, `annotate-human`, `annotate-sliding`, `upload-models`)
+- [x] Step 9: Makefile targets (`download-models`, `annotate-mouse`, `annotate-human`, `annotate-mouse-sliding`, `upload-models`)
 - [x] Step 10: `.env.example` updated with `HUGGING_FACE_TOKEN`
 - [x] Step 11: `pyproject.toml` updated with `tqdm` explicit dep
 - [x] Step 12: `README.md` updated with 3-command quick-start
@@ -348,5 +348,5 @@ with a legend identifying the detected structures.
 2. **Test the full end-user workflow:**
    ```bash
    make download-models
-   make annotate IMAGES=/path/to/test/slides/
+   make annotate-mouse IMAGES=/path/to/test/slides/
    ```

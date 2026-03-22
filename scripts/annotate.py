@@ -162,11 +162,13 @@ def _print_shortcut_reminder(input_path: str, species: str, sliding_window: bool
     print()
     print("-" * 60)
     print("TIP: Next time, skip the prompts by running:")
-    cmd = f"  make annotate IMAGES={input_path}"
+    cmd = f"  make annotate-mouse IMAGES={input_path}"
     if species == "human":
         cmd = f"  make annotate-human IMAGES={input_path}"
+    elif species == "human-bigbrain":
+        cmd = f"  make annotate-human-bigbrain IMAGES={input_path}"
     if sliding_window:
-        cmd = f"  make annotate-sliding IMAGES={input_path}"
+        cmd = cmd.replace(" IMAGES=", "-sliding IMAGES=")
     print(cmd)
     print("-" * 60)
 
@@ -198,9 +200,11 @@ Output:
     parser.add_argument(
         "--species",
         type=str,
-        choices=["mouse", "human"],
+        choices=["mouse", "human", "human-bigbrain"],
         default="mouse",
-        help="Species model to use (default: mouse)",
+        help="Model to use: mouse (1,328 brain structures), "
+             "human (44 brain regions), or human-bigbrain (10 tissue types). "
+             "Default: mouse",
     )
     parser.add_argument(
         "--model",
