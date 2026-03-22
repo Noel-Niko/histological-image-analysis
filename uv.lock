@@ -1350,6 +1350,7 @@ dependencies = [
     { name = "svgpathtools" },
     { name = "torch" },
     { name = "torchvision" },
+    { name = "tqdm" },
     { name = "transformers" },
 ]
 
@@ -1392,6 +1393,7 @@ requires-dist = [
     { name = "svgpathtools", specifier = ">=1.6" },
     { name = "torch", specifier = ">=2.0" },
     { name = "torchvision", specifier = ">=0.15" },
+    { name = "tqdm", specifier = ">=4.66" },
     { name = "transformers", specifier = ">=4.40" },
 ]
 provides-extras = ["exploration", "dev"]

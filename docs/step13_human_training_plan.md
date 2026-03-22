@@ -2,8 +2,8 @@
 
 **Date:** 2026-03-16
 **Depends on:** `docs/data_download_plan_human.md`, `docs/human_data_search_results.md`, `docs/progress.md`
-**Status:** STEP 6 COMPLETE — All three tracks trained. Depth-3 (44 classes) is the winner at 65.5% CC mIoU. Paper draft written.
-**Updated:** 2026-03-20 — All runs complete. Depth-3 200ep: 65.5% CC mIoU (44 classes). BigBrain 200ep: 60.8% CC mIoU (10 classes). Allen 597-class 200ep: plateaued ~27% mIoU (eval not run — not competitive). Paper draft: `docs/human_paper_draft.md`.
+**Status:** STEP 6 COMPLETE — All three tracks trained. Depth-3 (44 classes) is the winner at 65.5% CC mIoU. Paper draft written. **Step 14 in progress** — see `docs/step14_finishing_plan.md`.
+**Updated:** 2026-03-22 — Step 14 started: test eval notebook, figure generation notebook, paper improvements. See `docs/step14_finishing_plan.md` for details.
 
 ---
 
@@ -662,5 +662,12 @@ All at `/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology/`
 ### PhD slide workflow
 VSI → JPEG/PNG conversion → rotate to horizontal → feed to winning model
 
+### Step 14 (finishing)
+See `docs/step14_finishing_plan.md` for:
+- 14.1: Test-set evaluation notebook (`eval_human_depth3_test.ipynb`)
+- 14.2: Figure generation notebook (`generate_human_paper_figures.ipynb`)
+- 14.3: Paper draft improvements (practical deployment, limitation refinements)
+- 14.4: Makefile + plan updates
+
 ### Implementation order
-~~Steps 1 → 2A + 2B → 2A-validate → 3A+3B → 4A+4B → 5~~ → 6
+~~Steps 1 → 2A + 2B → 2A-validate → 3A+3B → 4A+4B → 5~~ → 6 → 14

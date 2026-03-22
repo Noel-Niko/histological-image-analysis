@@ -33,8 +33,71 @@ NOTEBOOK_HUMAN_BB_SRC     := notebooks/finetune_human_bigbrain.ipynb
 NOTEBOOK_HUMAN_BB_DEST    := $(WORKSPACE_BASE)/notebooks/finetune_human_bigbrain
 NOTEBOOK_HUMAN_ALLEN_D3_SRC  := notebooks/finetune_human_allen_depth3.ipynb
 NOTEBOOK_HUMAN_ALLEN_D3_DEST := $(WORKSPACE_BASE)/notebooks/finetune_human_allen_depth3
+NOTEBOOK_EVAL_D3_TEST_SRC    := notebooks/eval_human_depth3_test.ipynb
+NOTEBOOK_EVAL_D3_TEST_DEST   := $(WORKSPACE_BASE)/notebooks/eval_human_depth3_test
+NOTEBOOK_HUMAN_FIGURES_SRC   := notebooks/generate_human_paper_figures.ipynb
+NOTEBOOK_HUMAN_FIGURES_DEST  := $(WORKSPACE_BASE)/notebooks/generate_human_paper_figures
 
-.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy deploy-human-annotations validate help
+.PHONY: install test lint build clean deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy-notebook-eval-depth3-test deploy-notebook-human-figures deploy deploy-human-annotations validate help download-models download-models-mouse download-models-human annotate annotate-human annotate-sliding upload-models fetch-models-from-dbfs fetch-mouse-from-dbfs fetch-human-from-dbfs
+
+# ── End-User Workflow ─────────────────────────────────────────────────
+
+download-models: ## Download all trained models from HuggingFace Hub (~2.5 GB)
+	uv run python scripts/download_models.py --species all
+
+download-models-mouse: ## Download mouse brain model only (~1.2 GB)
+	uv run python scripts/download_models.py --species mouse
+
+download-models-human: ## Download human brain model only (~1.2 GB)
+	uv run python scripts/download_models.py --species human
+
+annotate: ## Annotate brain images (set IMAGES=/path/to/folder)
+	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate IMAGES=/path/to/slides" && exit 1)
+	uv run python scripts/annotate.py $(IMAGES)
+
+annotate-human: ## Annotate with human brain model (set IMAGES=/path/to/folder)
+	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate-human IMAGES=/path/to/slides" && exit 1)
+	uv run python scripts/annotate.py $(IMAGES) --species human
+
+annotate-sliding: ## Annotate with sliding window — slower, more accurate (set IMAGES=/path)
+	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path." && exit 1)
+	uv run python scripts/annotate.py $(IMAGES) --sliding-window
+
+upload-models: ## Upload models to HuggingFace Hub (one-time, requires HUGGING_FACE_TOKEN)
+	uv run python scripts/upload_to_hf.py
+
+# ── Databricks Model Download (developer only) ───────────────────────
+
+DBFS_MOUSE_MODEL  ?= dbfs:/FileStore/allen_brain_data/models/final-200ep
+DBFS_HUMAN_MODEL  ?= dbfs:/FileStore/allen_brain_data/models/human-allen-depth3
+LOCAL_MOUSE_MODEL := ./models/dinov2-upernet-final
+LOCAL_HUMAN_MODEL := ./models/human-depth3
+
+fetch-models-from-dbfs: ## Download models from Databricks DBFS to local (requires Databricks CLI)
+	@echo "=== Downloading models from Databricks DBFS ==="
+	mkdir -p $(LOCAL_MOUSE_MODEL) $(LOCAL_HUMAN_MODEL)
+	@echo ""
+	@echo "--- Mouse model (final-200ep, 1,328 classes) ---"
+	databricks fs cp -r $(DBFS_MOUSE_MODEL) $(LOCAL_MOUSE_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
+	@echo ""
+	@echo "--- Human model (depth-3, 44 classes) ---"
+	databricks fs cp -r $(DBFS_HUMAN_MODEL) $(LOCAL_HUMAN_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
+	@echo ""
+	@echo "=== Download complete ==="
+	@echo "  Mouse: $(LOCAL_MOUSE_MODEL)"
+	@echo "  Human: $(LOCAL_HUMAN_MODEL)"
+	@echo ""
+	@echo "Next: make upload-models"
+
+fetch-mouse-from-dbfs: ## Download mouse model from Databricks DBFS
+	mkdir -p $(LOCAL_MOUSE_MODEL)
+	databricks fs cp -r $(DBFS_MOUSE_MODEL) $(LOCAL_MOUSE_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
+	@echo "Mouse model downloaded to $(LOCAL_MOUSE_MODEL)"
+
+fetch-human-from-dbfs: ## Download human model from Databricks DBFS
+	mkdir -p $(LOCAL_HUMAN_MODEL)
+	databricks fs cp -r $(DBFS_HUMAN_MODEL) $(LOCAL_HUMAN_MODEL) --profile $(DATABRICKS_PROFILE) --overwrite
+	@echo "Human model downloaded to $(LOCAL_HUMAN_MODEL)"
 
 # ── Local Development ──────────────────────────────────────────────────
 
@@ -178,6 +241,24 @@ deploy-notebook-human-allen-depth3: ## Upload Allen Human depth-3 training noteb
 		--profile $(DATABRICKS_PROFILE)
 	@echo "Notebook uploaded to $(NOTEBOOK_HUMAN_ALLEN_D3_DEST)"
 
+deploy-notebook-eval-depth3-test: ## Upload depth-3 test evaluation notebook
+	databricks workspace mkdirs $(dir $(NOTEBOOK_EVAL_D3_TEST_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_EVAL_D3_TEST_DEST) \
+		--file $(NOTEBOOK_EVAL_D3_TEST_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_EVAL_D3_TEST_DEST)"
+
+deploy-notebook-human-figures: ## Upload human paper figure generation notebook
+	databricks workspace mkdirs $(dir $(NOTEBOOK_HUMAN_FIGURES_DEST)) --profile $(DATABRICKS_PROFILE) 2>/dev/null || true
+	databricks workspace import $(NOTEBOOK_HUMAN_FIGURES_DEST) \
+		--file $(NOTEBOOK_HUMAN_FIGURES_SRC) \
+		--format JUPYTER \
+		--overwrite \
+		--profile $(DATABRICKS_PROFILE)
+	@echo "Notebook uploaded to $(NOTEBOOK_HUMAN_FIGURES_DEST)"
+
 deploy-human-annotations: ## Upload human annotation data to Databricks workspace
 	@echo "=== Uploading human annotation data ==="
 	@echo ""
@@ -222,7 +303,7 @@ deploy-human-annotations: ## Upload human annotation data to Databricks workspac
 	@echo "  - developing_human_atlas/    (169 images + 169 SVGs)"
 	@echo "  - bigbrain/                  (NIfTI volumes + layer segmentation)"
 
-deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain ## Full deployment (wheel + all notebooks)
+deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full deploy-notebook-unfrozen deploy-notebook-weighted-loss deploy-notebook-augmented deploy-notebook-eval-tta deploy-notebook-pruned-multiaxis deploy-notebook-pruned-ablation deploy-notebook-final deploy-notebook-human-allen deploy-notebook-human-allen-depth3 deploy-notebook-human-bigbrain deploy-notebook-eval-depth3-test deploy-notebook-human-figures ## Full deployment (wheel + all notebooks)
 	@echo ""
 	@echo "=== Deployment complete ==="
 	@echo ""
@@ -240,6 +321,8 @@ deploy: deploy-wheel deploy-notebook deploy-notebook-depth2 deploy-notebook-full
 	@echo "  - Human Allen (Track A):          $(NOTEBOOK_HUMAN_ALLEN_DEST)"
 	@echo "  - Human Allen depth-3 (Track A):  $(NOTEBOOK_HUMAN_ALLEN_D3_DEST)"
 	@echo "  - Human BigBrain (Track B):       $(NOTEBOOK_HUMAN_BB_DEST)"
+	@echo "  - Depth-3 Test Eval:              $(NOTEBOOK_EVAL_D3_TEST_DEST)"
+	@echo "  - Human Paper Figures:            $(NOTEBOOK_HUMAN_FIGURES_DEST)"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Open a notebook on Databricks"

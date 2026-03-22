@@ -343,17 +343,31 @@ Based on the analysis, the most impactful improvements would be:
 
 4. **Cross-track pre-training.** Pre-training on BigBrain (dense tissue labels) before fine-tuning on Allen (sparse structure labels) could give the model a foundation in human tissue appearance before attempting fine-grained parcellation.
 
+### Practical Deployment
+
+The target application is identifying brain regions in novel Nissl-stained tissue sections from standard cover slips, prepared by a PhD collaborator. The deployment pipeline is:
+
+1. **Image acquisition.** Whole-slide images captured in VSI format (Olympus/Evident scanner).
+2. **Format conversion.** VSI → JPEG/PNG using Bio-Formats or QuPath export.
+3. **Orientation standardization.** Rotate all sections to consistent horizontal orientation to match the Allen training data. The model is orientation-specific (as demonstrated in the companion mouse paper: coronal 68.9% mIoU, axial 3.2%, sagittal 0.5%).
+4. **Inference.** Load the depth-3 model, resize to 1,024px max dimension, run sliding window inference (518×518 tiles, stride 259, 50% overlap) with fp16 on a single GPU.
+5. **Output.** Per-pixel region predictions across 44 depth-3 brain regions. Major regions (cerebral cortex, cerebellum, thalamus, pons, cerebral nuclei) are predicted at >98% IoU. Sulci and small fiber tracts are less reliable (1–35% IoU).
+
+The model requires no post-processing for the primary use case of region identification. For boundary refinement, CRF smoothing or connected component filtering could be added as optional post-processing steps.
+
+**Hardware requirements.** Inference on a single NVIDIA L40S (48 GB) processes one 1,024px image in ~2 seconds with sliding window tiling. A consumer GPU (RTX 3080/4080, 10–16 GB) is sufficient for inference — the 44-class logit buffer at 1,024px requires only ~75 MB.
+
 ### Limitations
 
-1. **No test-set evaluation.** All reported metrics are on the validation split. The held-out test donor (H0351.1015, 634 images) provides an independent evaluation but was not used in this study.
+1. **Sliding window subset for validation.** SW evaluation on the Allen tracks used only 50 of 641 validation images, introducing sampling variance in per-class SW mIoU estimates. The SW mIoU of 45.1% (vs 65.5% CC mIoU) partly reflects this limited sample: only 27/44 classes appeared in the 50-image SW subset, and rare classes (sulci, fiber tracts) that dominate the SW periphery are overrepresented relative to their true population frequency. Full-set SW evaluation on the test donor (634 images) provides a more robust estimate.
 
-2. **Sliding window subset.** SW evaluation uses only 50 of 641 validation images for the Allen tracks, introducing sampling variance. Full-set SW evaluation would require significant compute.
+2. **Single stain for target application.** The PhD collaborator will provide Nissl-stained tissue, matching the Allen training data. Generalization to other stains (H&E, immunohistochemistry) is untested. The BigBrain model (Merker stain) demonstrates that the architecture transfers across stains, but cross-stain inference without retraining is not validated.
 
-3. **Single stain for target application.** The PhD collaborator will provide Nissl-stained tissue, matching the Allen training data. Generalization to other stains (H&E, immunohistochemistry) is untested.
+3. **No post-processing.** Raw model predictions without CRF smoothing, connected component analysis, or anatomical priors. Post-processing could improve boundary coherence, particularly for sulci and small structures where the model achieves low IoU.
 
-4. **No post-processing.** Raw model predictions without CRF smoothing, connected component analysis, or anatomical priors. Post-processing could improve boundary coherence.
+4. **597-class model not formally evaluated at 200 epochs.** The fine-grained model completed the full 200-epoch training schedule, but formal CC+SW evaluation was intentionally omitted. The decision was based on monitoring during training: mIoU was 25.8% at epoch 50, ~25.0% at epoch 61, and ~27.3% at epoch 117 — a gain of only +1.5% over 67 additional epochs, with the gap to depth-3 (65.5%) too large to close. Training loss converged to 0.128, confirming the model learned the training distribution but could not generalize to the held-out donor at this class granularity.
 
-5. **597-class model not fully evaluated.** The fine-grained model completed 200 epochs of training but formal evaluation was not performed because intermediate monitoring showed it had plateaued at ~27% mIoU, well below the depth-3 model.
+5. **Single validation/test donor per split.** Each split contains a single donor (val: H0351.1016, test: H0351.1015), so reported metrics reflect performance on one individual's brain morphology. True cross-donor generalization requires evaluation across multiple held-out donors, which the current 6-donor dataset cannot support without reducing training data.
 
 ---
 

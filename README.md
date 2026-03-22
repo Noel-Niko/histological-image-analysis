@@ -4,60 +4,60 @@ Fine-tune DINOv2-Large + UperNet for semantic segmentation of brain structures i
 
 ---
 
-## For PhD Researchers: Segment Your Brain Images
+## Quick Start: Annotate Brain Images
 
-Run the trained model on your own histological images — **no GPU or Databricks needed**.
+Annotate mouse or human brain tissue slides from the terminal — **no GPU, no Databricks, no IDE needed**.
 
-### 1. Install dependencies
-
-```bash
-pip install torch transformers matplotlib Pillow numpy tqdm
-```
-
-### 2. Download the trained model (~1.2 GB)
+### 1. Install
 
 ```bash
-# Requires Databricks CLI (pip install databricks-cli)
-databricks fs cp -r \
-  dbfs:/FileStore/allen_brain_data/models/final-200ep \
-  ./models/dinov2-upernet-final
+git clone <repo-url>
+cd histological-image-analysis
+make install
 ```
 
-### 3. Add your images
+Requires [uv](https://docs.astral.sh/uv/) (Python package manager) and Python >= 3.11.
 
-Place your brain tissue images (`.jpg`, `.png`, `.tif`) in the `images/` directory.
-
-### 4. Run inference
-
-**Option A — Script (batch processing, recommended for many images):**
+### 2. Download models (~2.5 GB total, one-time)
 
 ```bash
-python scripts/run_inference.py --image-dir images/ --output inference_results/
+make download-models
 ```
 
-**Option B — Notebook (interactive, visual, recommended for exploration):**
+Or download individually:
 
 ```bash
-jupyter notebook notebooks/local_inference.ipynb
+make download-models-mouse    # Mouse brain model only (~1.2 GB, 1,328 classes)
+make download-models-human    # Human brain model only (~1.2 GB, 44 classes)
 ```
 
-**Option C — Full-resolution sliding window (slower but more accurate):**
+### 3. Annotate your images
 
 ```bash
-python scripts/run_inference.py --image-dir images/ --output inference_results/ --sliding-window
+# Mouse brain tissue (default)
+make annotate IMAGES=/path/to/your/slides/
+
+# Human brain tissue
+make annotate-human IMAGES=/path/to/your/slides/
+
+# Higher accuracy (slower — sliding window)
+make annotate-sliding IMAGES=/path/to/your/slides/
 ```
 
-### What you get
+### Output
 
-For each input image, three files are saved to `inference_results/`:
+For each input image, an annotated version appears in the **same folder**:
 
-| File | Description |
-|------|-------------|
-| `<name>_mask.png` | Segmentation mask at model resolution (518x518, uint16) |
-| `<name>_mask_resized.png` | Segmentation mask at original image size (uint16) |
-| `<name>_visualization.png` | Side-by-side: input / segmentation / overlay |
+```
+your-slides/
+  slide_001.jpg                              # Original (untouched)
+  slide_001-annotated-20260322T143052.png    # Annotated overlay
+  slide_002.tif                              # Original
+  slide_002-annotated-20260322T143055.png    # Annotated overlay
+```
 
-Each pixel value is a class ID (0-1327) mapping to one of 1,328 Allen Mouse Brain Atlas structures.
+Each annotated image shows color-coded brain regions overlaid on the original,
+with a legend identifying the detected structures.
 
 ### Compute requirements
 
@@ -67,13 +67,23 @@ Each pixel value is a class ID (0-1327) mapping to one of 1,328 Allen Mouse Brai
 | Laptop GPU (MX/GTX) | ~2-5 seconds |
 | Desktop GPU (RTX 3060+) | ~1-2 seconds |
 
-RAM: 8 GB minimum, 16 GB recommended. Model size: ~1.2 GB.
+RAM: 8 GB minimum, 16 GB recommended. Model size: ~1.2 GB per species.
+
+### Advanced usage
+
+For raw segmentation masks and multi-panel visualizations:
+
+```bash
+python scripts/run_inference.py --image-dir images/ --output inference_results/
+```
+
+See `python scripts/annotate.py --help` and `python scripts/run_inference.py --help` for all options.
 
 ### More info
 
 - [Model download guide](docs/model_download_guide.md) — download, verify, troubleshoot
+- [CLI annotator plan](docs/step15_cli_annotator_plan.md) — full design document
 - [Paper draft](docs/paper_draft.md) — full ablation study (79.1% mIoU, 9 runs)
-- [CLI script options](scripts/run_inference.py) — `python scripts/run_inference.py --help`
 
 ---
 
@@ -227,34 +237,30 @@ histological-image-analysis/
 │   ├── ccfv3_slicer.py                  # CCFv3 3D volume -> 2D slice extraction
 │   ├── svg_rasterizer.py                # SVG annotation -> pixel mask
 │   ├── dataset.py                       # PyTorch Dataset (pad, crop, augment)
-│   └── training.py                      # DINOv2 + UperNet model/trainer factories
-├── tests/                               # 133 tests (pytest)
+│   ├── training.py                      # DINOv2 + UperNet model/trainer factories
+│   ├── inference.py                     # Shared inference (model loading, prediction)
+│   ├── annotation.py                    # Overlay generation (color regions + legend)
+│   └── download.py                      # Model download/verification utilities
+├── tests/                               # pytest suite
 │   ├── test_ontology.py                 # 51 tests (incl. real ontology + annotation)
 │   ├── test_ccfv3_slicer.py             # 22 tests
 │   ├── test_svg_rasterizer.py           # 10 tests
 │   ├── test_dataset.py                  # 15 tests
 │   ├── test_training.py                 # 35 tests
+│   ├── test_inference_module.py         # 14 tests (inference utilities)
+│   ├── test_annotate.py                 # 16 tests (overlay + filename)
+│   ├── test_download_models.py          # 11 tests (download verification)
 │   ├── conftest.py                      # Shared fixtures
 │   └── fixtures/minimal_ontology.json   # 15-structure test fixture
-├── images/                              # Drop your brain images here for inference
-├── notebooks/
-│   ├── local_inference.ipynb            # ← START HERE: local CPU inference notebook
-│   ├── finetune_final_200ep.ipynb       # Final model training (Databricks, Run 9)
-│   ├── generate_paper_figures.ipynb     # Paper figures (Databricks)
-│   └── historical/                      # Previous training runs (Runs 1-8a)
 ├── scripts/
-│   ├── run_inference.py                 # CLI inference: --image, --image-dir, --sliding-window
+│   ├── annotate.py                      # Annotate images with brain regions
+│   ├── download_models.py               # Download models from HuggingFace Hub
+│   ├── upload_to_hf.py                  # Upload models to HuggingFace (one-time)
+│   ├── run_inference.py                 # Raw inference: masks + visualizations
 │   ├── download_allen_data.py           # Download Allen Brain CCFv3 data
-│   └── generate_paper_figures.py        # Generate paper figures locally (Figs 1, 3)
+│   └── generate_paper_figures.py        # Generate paper figures locally
 ├── docs/                                # Design docs and progress tracking
-│   ├── progress.md                      # Full project history
-│   ├── step10_plan.md                   # Step 10 plan (for LLM continuity)
-│   ├── step11_plan.md                   # Step 11 plan (backbone unfreezing)
-│   ├── dinov2_model_research.md         # Backbone size analysis and recommendations
-│   ├── finetuning_recommendations.md    # Comprehensive fine-tuning roadmap
-│   ├── step10_gpu_memory_review.md      # GPU memory lessons from full-mapping runs
-│   └── joyful-popping-planet.md         # Step 9 tracker
-├── Makefile                             # Build, test, deploy commands (14 targets)
+├── Makefile                             # Build, test, deploy, annotate commands
 ├── .env.example                         # Environment variable template
 ├── pyproject.toml                       # Dependencies and build config
 └── uv.lock                              # Locked dependencies
