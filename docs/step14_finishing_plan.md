@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-22
 **Depends on:** `docs/step13_human_training_plan.md` (COMPLETE), `docs/human_paper_draft.md`
-**Status:** IN PROGRESS — Step 14.1 running on Databricks. Steps 14.5 + 14.6 COMPLETE. Next: redeploy + wait for test results.
+**Status:** COMPLETE — All steps 14.1–14.9 done. Test eval complete (CC 61.8%, SW 65.0%). Paper draft updated. Figures generated. HF repos updated. See Resume Instructions at bottom.
 
 ---
 
@@ -205,3 +205,96 @@ make deploy-wheel deploy-notebook-eval-depth3-test deploy-notebook-human-figures
 8. ~~Dead code cleanup (removed unused `render_track_rows`)~~ DONE
 9. ~~Redeploy figure notebook to Databricks~~ DONE — all figures generated successfully
 10. ~~Update paper draft Table 1 + Conclusion + Abstract + Section 4.3 + Limitations with test numbers~~ DONE
+11. ~~Add VSI deployment details + domain gap to paper (Practical Deployment, Limitations #6, Future Work #1)~~ DONE
+12. ~~Upload updated papers to HuggingFace Hub via `notebooks/upload_papers_to_hf.ipynb`~~ DONE
+13. ~~Update all plan docs for LLM resumability~~ DONE
+
+---
+
+## Resume Instructions for New LLM
+
+**Last updated:** 2026-03-22
+
+### Project Summary
+
+DINOv2-Large + UperNet semantic segmentation for brain region identification in histological tissue. Two papers:
+- **Mouse paper** (`docs/mouse_paper_draft.md`): 1,328 classes, 79.1% SW mIoU. COMPLETE.
+- **Human paper** (`docs/human_paper_draft.md`): Three tracks tested. Depth-3 (44 classes) is the winner. COMPLETE.
+
+### Current State: Step 14 COMPLETE
+
+All deliverables finished:
+- Test evaluation on held-out donor H0351.1015 (634 images): **CC 61.8%, SW 65.0%, Acc 99.1%**
+- 5 paper figures generated on Databricks (`notebooks/generate_human_paper_figures.ipynb`)
+- Paper draft fully updated with test numbers, VSI guidance, and Section 8 usage guide
+- Papers + model cards uploaded to HuggingFace Hub (3 repos)
+- CLI annotator tool working (`make annotate-human-allen`, etc.)
+
+### Key Results (Human Depth-3 Model)
+
+| Split | CC mIoU | SW mIoU | CC Accuracy | Valid Classes |
+|-------|---------|---------|-------------|---------------|
+| Val (H0351.1016, 641 imgs) | 65.5% | 45.1%* | 99.4% | 39/44 |
+| Test (H0351.1015, 634 imgs) | 61.8% | **65.0%** | 99.1% | 37/44 CC, 39/44 SW |
+
+*Val SW was artifact of 50-image subset (27/44 classes). Test SW on all 634 images is the real number.
+
+SW > CC by +3.2% on test, matching mouse pattern (+4.4%).
+
+### Key Files (read these to understand the project)
+
+| File | Purpose |
+|------|---------|
+| `docs/step14_finishing_plan.md` | THIS FILE — finishing steps, progress tracker |
+| `docs/step13_human_training_plan.md` | Full human training plan, all design decisions, all run results |
+| `docs/human_paper_draft.md` | Human paper draft (the main deliverable) |
+| `docs/mouse_paper_draft.md` | Mouse paper draft (companion paper) |
+| `docs/step16_cli_annotator_context.md` | CLI tool architecture and full codebase context |
+| `docs/step17_vsi_support_plan.md` | VSI format support plan (NOT YET IMPLEMENTED — has critical issues) |
+| `docs/step18_hf_upload_fix.md` | HuggingFace upload fix (BigBrain model) |
+| `README.md` | User-facing documentation, all Makefile commands |
+| `Makefile` | All build/deploy/annotate/download targets |
+
+### Key Notebooks
+
+| Notebook | Purpose | Status |
+|----------|---------|--------|
+| `finetune_human_allen_depth3.ipynb` | Train depth-3 model (44 classes, 200ep) | COMPLETE on Databricks |
+| `finetune_human_allen.ipynb` | Train 597-class model (200ep, plateaued ~27%) | COMPLETE on Databricks |
+| `finetune_human_bigbrain.ipynb` | Train BigBrain 10-class model (200ep) | COMPLETE on Databricks |
+| `eval_human_depth3_test.ipynb` | Test eval on H0351.1015 (634 imgs) | COMPLETE on Databricks |
+| `generate_human_paper_figures.ipynb` | All 5 paper figures | COMPLETE on Databricks |
+| `upload_models_to_hf.ipynb` | Upload model weights to HuggingFace | COMPLETE (all 3 models) |
+| `upload_papers_to_hf.ipynb` | Upload papers + READMEs to HuggingFace | COMPLETE (all 3 repos) |
+
+### HuggingFace Repos
+
+| Repo | Model | Files |
+|------|-------|-------|
+| `Noel-Niko/dinov2-upernet-20260322-histology-annotation-mouse` | Mouse 1,328 classes | model.safetensors, paper.md, README.md |
+| `Noel-Niko/dinov2-upernet-20260322-histology-annotation-human` | Human Allen depth-3 44 classes | model.safetensors, present_mapping.json, paper.md, README.md |
+| `Noel-Niko/dinov2-upernet-20260322-histology-annotation-human-bigbrain` | Human BigBrain 10 classes | model.safetensors, paper.md, README.md |
+
+### What's NOT Done (Potential Next Steps)
+
+1. **VSI support (Step 17):** Plan exists but has critical issues identified in review. See `docs/step17_vsi_support_plan.md` — the "Critical Issues" section documents what's wrong with the original plan. Key: must downsample 20-80× from scanner native resolution, series 0 is NOT the full-res image, .ets companion files required.
+
+2. **Re-run figure notebook with test_results.json:** Figure 4 (per-class IoU bars) will auto-load test data from DBFS instead of hardcoded val data. Optional — val data is sufficient for the paper.
+
+3. **Figure 3 bar chart update:** Currently shows val SW mIoU (45.1%) for depth-3. Could update to test SW (65.0%). Requires editing hardcoded values in the notebook.
+
+4. **Test eval on 597-class and BigBrain models:** Only depth-3 has test numbers. Future work item in the paper.
+
+5. **Domain adaptation:** Fine-tuning depth-3 model on real scanner VSI slides once available from PhD collaborator.
+
+### Git Branch
+
+Working branch: `preparation`. Main branch: `master`. All changes are on `preparation` — user manages commits.
+
+### Test Suite
+
+342 tests, all passing. Run with `make test` or `uv run pytest`.
+
+### Communication Mode
+
+User prefers **iMessage/phone mode** for async communication when away from computer. See `~/.claude/skills/imessage-notify/SKILL.md` for protocol. Auto-trigger on mentions of "iMessage", "phone", "away from computer".

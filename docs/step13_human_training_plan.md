@@ -2,8 +2,8 @@
 
 **Date:** 2026-03-16
 **Depends on:** `docs/data_download_plan_human.md`, `docs/human_data_search_results.md`, `docs/progress.md`
-**Status:** STEP 6 COMPLETE — All three tracks trained. Depth-3 (44 classes) is the winner at 65.5% CC mIoU. Paper draft written. **Step 14 in progress** — see `docs/step14_finishing_plan.md`.
-**Updated:** 2026-03-22 — Step 14 started: test eval notebook, figure generation notebook, paper improvements. See `docs/step14_finishing_plan.md` for details.
+**Status:** STEP 6 COMPLETE — All three tracks trained. Depth-3 (44 classes) is the winner. **Step 14 COMPLETE** — test eval done (CC 61.8%, SW 65.0% on 634 test images), paper draft updated, figures generated, HF repos updated. See `docs/step14_finishing_plan.md`.
+**Updated:** 2026-03-22 — Step 14 complete. Test results integrated into paper. VSI deployment guidance added. Papers uploaded to HuggingFace.
 
 ---
 
@@ -630,7 +630,17 @@ The large CC-to-SW gap is driven by rare/small classes. CC center-crops mostly s
 
 *Estimated from epoch 117 monitoring; formal evaluation not performed.
 
-**Winner: Allen depth-3 (44 classes).** Best CC mIoU, near-perfect accuracy, practical anatomical granularity for PhD use case. Paper draft written: `docs/human_paper_draft.md`.
+**Winner: Allen depth-3 (44 classes).** Best CC mIoU, near-perfect accuracy, practical anatomical granularity for PhD use case.
+
+**Test-set results (Step 14.1, donor H0351.1015, 634 images):**
+- CC mIoU: 61.8% (vs 65.5% val — normal cross-donor variance)
+- SW mIoU: **65.0%** (vs 45.1% val — val was 50-image subset artifact)
+- CC accuracy: 99.1%, SW accuracy: 98.9%
+- SW > CC by +3.2%, matching mouse pattern (+4.4%)
+- Top test classes: cerebellum 99.98%, cerebral cortex 99.38%, thalamus 99.11%
+- Bottom test classes: cranial nerves 0.26%, hypothalamus 11.86%
+
+Paper draft: `docs/human_paper_draft.md`. All test numbers integrated.
 
 ### Key files
 - `docs/step13_human_training_plan.md` (this file — authoritative plan)
@@ -662,12 +672,17 @@ All at `/Workspace/Users/noel.nosse@grainger.com/visual-model-ft/histology/`
 ### PhD slide workflow
 VSI → JPEG/PNG conversion → rotate to horizontal → feed to winning model
 
-### Step 14 (finishing)
-See `docs/step14_finishing_plan.md` for:
-- 14.1: Test-set evaluation notebook (`eval_human_depth3_test.ipynb`)
-- 14.2: Figure generation notebook (`generate_human_paper_figures.ipynb`)
-- 14.3: Paper draft improvements (practical deployment, limitation refinements)
+### Step 14 (finishing) — COMPLETE
+See `docs/step14_finishing_plan.md` for full details. Summary:
+- 14.1: Test-set evaluation — CC 61.8%, SW 65.0%, Acc 99.1% on 634 test images (donor H0351.1015)
+- 14.2: Figure generation notebook — all 5 figures + 3-track Figure 2 (597/depth-3/BigBrain)
+- 14.3: Paper draft improvements — practical deployment, limitations, Section 8 usage guide
 - 14.4: Makefile + plan updates
+- 14.5: Figure notebook review fixes (6 issues)
+- 14.6: Three-track Figure 2 (all 3 models, same Allen images for tracks A+B)
+- 14.7: Dead code cleanup (removed unused `render_track_rows`)
+- 14.8: Paper test numbers — Table 1, Section 4.3, Limitations, Conclusion, Abstract, Discussion
+- 14.9: VSI + domain gap — expanded Practical Deployment, Limitation #6, Future Work #1
 
 ### Implementation order
 ~~Steps 1 → 2A + 2B → 2A-validate → 3A+3B → 4A+4B → 5~~ → 6 → 14
