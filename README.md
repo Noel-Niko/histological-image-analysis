@@ -220,6 +220,56 @@ resolution, larger files.
 
 ---
 
+## HuggingFace Model Maintenance
+
+All three models are hosted on HuggingFace Hub. Two notebooks manage uploads:
+
+| Task | Notebook | Run where |
+|------|----------|-----------|
+| Upload/update **model weights** | `notebooks/upload_models_to_hf.ipynb` | Databricks or local |
+| Upload/update **papers + READMEs** | `notebooks/upload_papers_to_hf.ipynb` | Local only |
+
+### HuggingFace repos
+
+| Model | HuggingFace Repo |
+|-------|-----------------|
+| Mouse (1,328 classes) | [Noel-Niko/dinov2-upernet-20260322-histology-annotation-mouse](https://huggingface.co/Noel-Niko/dinov2-upernet-20260322-histology-annotation-mouse) |
+| Human Allen (44 regions) | [Noel-Niko/dinov2-upernet-20260322-histology-annotation-human](https://huggingface.co/Noel-Niko/dinov2-upernet-20260322-histology-annotation-human) |
+| Human BigBrain (10 types) | [Noel-Niko/dinov2-upernet-20260322-histology-annotation-human-bigbrain](https://huggingface.co/Noel-Niko/dinov2-upernet-20260322-histology-annotation-human-bigbrain) |
+
+### Update model weights
+
+Use when you retrain a model and want to push new weights to HuggingFace.
+
+**From Databricks** (reads models from DBFS):
+1. Uncomment the `%pip install` line in Cell 0
+2. Set `UPLOAD_SPECIES` in Cell 2 (`"mouse"`, `"human"`, `"human-bigbrain"`, or `"all"`)
+3. Run all cells
+
+**From local** (reads models from `./models/`):
+```bash
+export HUGGING_FACE_TOKEN=hf_your_token_here
+jupyter notebook notebooks/upload_models_to_hf.ipynb
+```
+
+### Update papers or READMEs
+
+Use when you revise a paper or want to update the model card shown on HuggingFace.
+
+```bash
+# 1. Edit the paper(s) in docs/
+#    - docs/mouse_paper_draft.md     -> uploaded to mouse repo as paper.md
+#    - docs/human_paper_draft.md     -> uploaded to human + human-bigbrain repos as paper.md
+
+# 2. Run the papers notebook locally
+export HUGGING_FACE_TOKEN=hf_your_token_here
+jupyter notebook notebooks/upload_papers_to_hf.ipynb
+```
+
+To edit a README model card, modify the templates in Cell 1 of `upload_papers_to_hf.ipynb` and re-run. HuggingFace repos are git-backed — every change is versioned and you can re-run freely.
+
+---
+
 ## Developer Setup
 
 ### Prerequisites
