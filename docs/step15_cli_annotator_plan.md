@@ -328,7 +328,7 @@ with a legend identifying the detected structures.
 - [x] Step 10: `.env.example` updated with `HUGGING_FACE_TOKEN`
 - [x] Step 11: `pyproject.toml` updated with `tqdm` explicit dep
 - [x] Step 12: `README.md` updated with 3-command quick-start
-- [x] Step 13: Full test suite — **342 tests passing**
+- [x] Step 13: Full test suite — **342 tests passing** (now 397 after Step 17 VSI support)
 
 ## Next Steps (Manual)
 

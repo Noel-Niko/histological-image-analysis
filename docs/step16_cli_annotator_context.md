@@ -87,7 +87,9 @@ All images are converted to RGB on load. Grayscale works. Output is always `.png
 | `tests/test_inference_module.py` | 14 tests for inference utilities |
 | `tests/test_annotate.py` | 16 tests for overlay + filename |
 | `tests/test_download_models.py` | 11 tests for download verification |
-| `Makefile` | User-facing commands: `annotate-mouse`, `annotate-human-allen`, etc. |
+| `tests/test_inspect_vsi.py` | 28 tests for VSI inspection + showinf parsing |
+| `tests/test_convert_vsi.py` | 23 tests for VSI conversion + series selection |
+| `Makefile` | User-facing commands: `annotate-mouse`, `annotate-human-allen`, VSI conversion, etc. |
 
 ---
 
@@ -126,7 +128,7 @@ make convert-vsi IMAGES=/path RESOLUTION=10      # Convert VSI → TIFF at targe
 - Guided mode with file-type instructions and path prompts
 - Direct mode for scripted/repeated use
 - Unsupported files are warned about before processing begins
-- 342 tests passing (41 new for CLI tool + 301 existing)
+- 397 tests passing (51 VSI + 41 CLI tool + 305 existing)
 - Original files are never modified (verified by tests + code audit)
 
 ### What's Missing / Known Gaps
@@ -166,11 +168,11 @@ make convert-vsi IMAGES=/path RESOLUTION=10      # Convert VSI → TIFF at targe
    It falls back to PIL's default bitmap font on Linux/Windows, which looks worse.
    A bundled TTF font would improve cross-platform appearance.
 
-5. **No batch progress reporting beyond tqdm.**
+6. **No batch progress reporting beyond tqdm.**
    For very large batches (hundreds of slides), there's no summary log file or
    CSV output listing which files were processed, how many regions were detected, etc.
 
-6. **Training data is not included in the repo.**
+7. **Training data is not included in the repo.**
    Training data (Allen Brain CCFv3 volumes, human atlas images) lives on Databricks.
    The `data/` directory has download scripts but is mostly `.gitignore`d. A future
    contributor would need Databricks access to retrain models.
@@ -213,7 +215,7 @@ If you train a new model (e.g., improved human model, different species):
 5. **Update** `resolve_repo_ids()` in `download.py` if you add a new species.
 6. **Update** `Makefile` with a new `annotate-{species}` target.
 7. **Update** `README.md` with the new model in the command table.
-8. **Run tests:** `make test` — all 342+ should still pass.
+8. **Run tests:** `make test` — all 397+ should still pass.
 
 ---
 
@@ -224,7 +226,7 @@ If you train a new model (e.g., improved human model, different species):
 git clone https://github.com/Noel-Niko/histological-image-analysis.git
 cd histological-image-analysis
 make install          # uv sync --all-extras
-make test             # 342 tests
+make test             # 397 tests
 make download-models  # pull models from HuggingFace Hub
 ```
 

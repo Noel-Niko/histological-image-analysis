@@ -260,7 +260,7 @@ cp .env.example .env        # Edit with your values
 make install                # uv sync --all-extras
 
 # Run tests
-make test                   # 133 tests
+make test                   # 397 tests
 
 # Lint
 make lint                   # ruff check
@@ -373,8 +373,9 @@ histological-image-analysis/
 │   ├── training.py                      # DINOv2 + UperNet model/trainer factories
 │   ├── inference.py                     # Shared inference (model loading, prediction)
 │   ├── annotation.py                    # Overlay generation (color regions + legend)
-│   └── download.py                      # Model download/verification utilities
-├── tests/                               # pytest suite
+│   ├── download.py                      # Model download/verification utilities
+│   └── vsi.py                           # VSI inspection, parsing, series selection, conversion
+├── tests/                               # pytest suite (397 tests)
 │   ├── test_ontology.py                 # 51 tests (incl. real ontology + annotation)
 │   ├── test_ccfv3_slicer.py             # 22 tests
 │   ├── test_svg_rasterizer.py           # 10 tests
@@ -383,6 +384,8 @@ histological-image-analysis/
 │   ├── test_inference_module.py         # 14 tests (inference utilities)
 │   ├── test_annotate.py                 # 16 tests (overlay + filename)
 │   ├── test_download_models.py          # 11 tests (download verification)
+│   ├── test_inspect_vsi.py              # 28 tests (VSI inspection + parsing)
+│   ├── test_convert_vsi.py              # 23 tests (VSI conversion + series selection)
 │   ├── conftest.py                      # Shared fixtures
 │   └── fixtures/minimal_ontology.json   # 15-structure test fixture
 ├── scripts/
@@ -390,6 +393,8 @@ histological-image-analysis/
 │   ├── download_models.py               # Download models from HuggingFace Hub
 │   ├── upload_to_hf.py                  # Upload models to HuggingFace (one-time)
 │   ├── run_inference.py                 # Raw inference: masks + visualizations
+│   ├── inspect_vsi.py                   # Inspect VSI file metadata (series, resolutions)
+│   ├── convert_vsi.py                   # Batch-convert VSI → TIFF at target resolution
 │   ├── download_allen_data.py           # Download Allen Brain CCFv3 data
 │   └── generate_paper_figures.py        # Generate paper figures locally
 ├── docs/                                # Design docs and progress tracking

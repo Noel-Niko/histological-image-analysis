@@ -1,13 +1,11 @@
 """Tests for VSI inspection functionality."""
 
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from histological_image_analysis.vsi import (
-    SeriesInfo,
     find_vsi_files,
     parse_showinf_output,
     validate_companion_dir,
@@ -319,7 +317,7 @@ class TestInspectVsiFile:
         )
 
         showinf_path = tmp_path / "showinf"
-        series = inspect_vsi_file(vsi_path, showinf_path)
+        inspect_vsi_file(vsi_path, showinf_path)
 
         mock_run.assert_called_once()
         call_args = mock_run.call_args

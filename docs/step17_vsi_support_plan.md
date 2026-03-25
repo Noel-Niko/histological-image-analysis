@@ -140,6 +140,19 @@ If fine-tuning is pursued, the approach would be:
 
 **This is out of scope for Step 17** — track separately as a future paper/project.
 
+## Implementation Notes (for future contributors)
+
+The original plan described `scripts/inspect_vsi.py` and `scripts/convert_vsi.py` as standalone scripts. During implementation, all shared logic was extracted into `src/histological_image_analysis/vsi.py` — a proper package module — following the existing codebase pattern where scripts are thin CLI wrappers and logic lives in the installable package. This means:
+
+- **`src/histological_image_analysis/vsi.py`** contains all core logic: `SeriesInfo` and `ConversionResult` dataclasses, `parse_showinf_output()`, `select_best_series()`, `validate_companion_dir()`, `convert_vsi_file()`, etc.
+- **`scripts/inspect_vsi.py`** is a thin argparse CLI that imports from `vsi.py` and formats output for the terminal.
+- **`scripts/convert_vsi.py`** is a thin argparse CLI that imports from `vsi.py` and handles batch iteration + progress reporting.
+- Both test files (`test_inspect_vsi.py`, `test_convert_vsi.py`) test the `vsi.py` module directly — they don't invoke the scripts.
+
+The plan's Step 2 item about Pillow downsample (`Image.LANCZOS`) for cases where the closest pyramid level is still >2x finer than target was **not implemented** in the initial version. The current code extracts the closest available pyramid level as-is. If testing reveals the output is still too high-res for good annotations, add a post-conversion downsample step to `convert_vsi_file()` before the output validation.
+
+The `download-bioformats-cli` Makefile target pins Bio-Formats version via `BFTOOLS_VERSION` (default `8.0.1`). This can be overridden: `make download-bioformats-cli BFTOOLS_VERSION=8.1.0`.
+
 ## Removed from Original Plan
 
 ### ~~Step 3 (original): Large-image tiled loading in `inference.py`~~
@@ -152,13 +165,14 @@ If fine-tuning is pursued, the approach would be:
 
 | Action | File | Purpose |
 |--------|------|---------|
-| Create | `scripts/inspect_vsi.py` | Display VSI series/resolution metadata |
-| Create | `scripts/convert_vsi.py` | VSI → TIFF batch conversion with resolution selection |
-| Create | `tests/test_inspect_vsi.py` | Inspection script tests |
-| Create | `tests/test_convert_vsi.py` | Conversion script tests |
+| Create | `src/histological_image_analysis/vsi.py` | Core module: `SeriesInfo`, `ConversionResult`, parsing, series selection, validation, conversion |
+| Create | `scripts/inspect_vsi.py` | CLI wrapper: display VSI series/resolution metadata |
+| Create | `scripts/convert_vsi.py` | CLI wrapper: batch-convert VSI → TIFF at target resolution |
+| Create | `tests/test_inspect_vsi.py` | 28 tests: showinf parsing, companion dir validation, error handling |
+| Create | `tests/test_convert_vsi.py` | 23 tests: series selection, conversion workflow, output validation |
 | Edit | `Makefile` | `download-bioformats-cli`, `inspect-vsi`, `convert-vsi` targets |
-| Edit | `README.md` | VSI workflow docs |
-| Edit | `docs/step16_cli_annotator_context.md` | VSI context |
+| Edit | `README.md` | VSI workflow docs, project structure updated |
+| Edit | `docs/step16_cli_annotator_context.md` | VSI context, updated known gaps and test counts |
 | Edit | `.gitignore` | Add `tools/` |
 
 **Not modified**: `inference.py`, `pyproject.toml` — the conversion handles the format/resolution gap so the existing pipeline works unchanged.
