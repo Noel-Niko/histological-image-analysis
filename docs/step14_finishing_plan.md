@@ -161,13 +161,15 @@ make deploy-wheel deploy-notebook-eval-depth3-test deploy-notebook-human-figures
 
 | Step | Status | Notes |
 |------|--------|-------|
-| 14.1 Test eval notebook | RUNNING ON DATABRICKS | `eval_human_depth3_test.ipynb` — CC + SW on 634 test images |
+| 14.1 Test eval notebook | COMPLETE | CC 61.8%, SW 65.0%, CC Acc 99.1% on 634 test images |
 | 14.2 Figure notebook | COMPLETE (needs review fixes) | `generate_human_paper_figures.ipynb` — 5 figures generated |
 | 14.3 Paper draft improvements | COMPLETE | Practical Deployment subsection, expanded Limitations |
 | 14.4 Makefile + plan updates | COMPLETE | 2 new deploy targets added |
 | 14.5 Figure notebook review fixes | COMPLETE | All 6 issues fixed |
 | 14.6 Three-track Figure 2 | COMPLETE | All 3 models (597/depth-3/BigBrain), same Allen images for A+B |
 | 14.7 Dead code cleanup | COMPLETE | Removed unused `render_track_rows` function from cell 4 |
+| 14.8 Paper test numbers | COMPLETE | Table 1, Section 4.3, Limitations, Conclusion, Abstract, Discussion updated with test results |
+| 14.9 VSI + domain gap in paper | COMPLETE | Expanded Practical Deployment with VSI resolution matching, added Limitation #6 (atlas-to-scanner gap), Future Work #1 (domain adaptation) |
 
 ---
 
@@ -202,4 +204,4 @@ make deploy-wheel deploy-notebook-eval-depth3-test deploy-notebook-human-figures
 7. ~~Three-track Figure 2 (Step 14.6)~~ DONE
 8. ~~Dead code cleanup (removed unused `render_track_rows`)~~ DONE
 9. ~~Redeploy figure notebook to Databricks~~ DONE — all figures generated successfully
-10. After test eval completes: update paper draft Table 1 + Conclusion with test numbers ← NEXT
+10. ~~Update paper draft Table 1 + Conclusion + Abstract + Section 4.3 + Limitations with test numbers~~ DONE

@@ -9,7 +9,7 @@ make download-models          # 1. Download models locally (one-time)
 make annotate-mouse IMAGES=/path    # 2. Annotate images
 ```
 
-Output: each input file gets a sibling file `{stem}-annotated-{YYYYMMDDTHHMMSS}.png` in the same directory, showing the original image with a color overlay of detected brain regions and a legend.
+Output: each input file gets a sibling file `{stem}-annotated-{species}-{YYYYMMDDTHHMMSS}.png` in the same directory, showing the original image with a color overlay of detected brain regions and a legend.
 
 No IDE, no Databricks CLI, no notebooks — just `make` and a terminal.
 
@@ -25,7 +25,7 @@ No IDE, no Databricks CLI, no notebooks — just `make` and a terminal.
 ### Gaps
 
 1. Models are only downloadable via Databricks CLI (requires corporate auth) — no public download path
-2. Output goes to a separate `results/` dir with `_mask.png` / `_visualization.png` naming — not `{name}-annotated-{timestamp}` alongside originals
+2. Output goes to a separate `results/` dir with `_mask.png` / `_visualization.png` naming — not `{name}-annotated-{species}-{timestamp}` alongside originals
 3. Visualization is a 3-panel matplotlib figure, not a single annotated overlay image
 4. No species selection (mouse vs. human)
 5. No `make` targets for the end-user workflow
@@ -66,7 +66,7 @@ A single image per input file:
 - Legend panel on the right side listing the top 15 detected regions by pixel area
 - Region boundaries drawn as thin contour lines for clarity
 
-File naming: `{stem}-annotated-{YYYYMMDDTHHMMSS}.png` placed in the **same directory** as the input file.
+File naming: `{stem}-annotated-{species}-{YYYYMMDDTHHMMSS}.png` placed in the **same directory** as the input file.
 
 ### Species Selection
 
@@ -142,7 +142,7 @@ Implementation:
   5. Draw contour boundaries between adjacent regions (1px black lines)
   6. Add legend panel on the right: top 15 regions sorted by pixel area, with color swatches + names from `model.config.id2label`
   7. Save as PNG
-- **Output naming**: `{stem}-annotated-{datetime.now().strftime('%Y%m%dT%H%M%S')}.png` in same directory as input.
+- **Output naming**: `{stem}-annotated-{species}-{datetime.now().strftime('%Y%m%dT%H%M%S')}.png` in same directory as input.
 - **Progress**: tqdm progress bar for batch processing.
 
 ### Step 4: Extract shared inference code into `src/`
@@ -177,8 +177,8 @@ annotate-mouse: ## Annotate mouse brain images (set IMAGES=/path/to/folder)
 	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate-mouse IMAGES=/path/to/slides" && exit 1)
 	uv run python scripts/annotate.py $(IMAGES)
 
-annotate-human: ## Annotate with human model (set IMAGES=/path/to/folder)
-	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate-human IMAGES=/path/to/slides" && exit 1)
+annotate-human-allen: ## Annotate with human Allen model (set IMAGES=/path/to/folder)
+	@test -n "$(IMAGES)" || (echo "ERROR: Set IMAGES path. Usage: make annotate-human-allen IMAGES=/path/to/slides" && exit 1)
 	uv run python scripts/annotate.py $(IMAGES) --species human
 
 annotate-mouse-sliding: ## Annotate mouse with sliding window (slower, more accurate)
@@ -200,7 +200,7 @@ New test file: `tests/test_annotate.py`
 
 Tests:
 1. **`test_create_annotated_overlay`** — Given a dummy image and prediction array, verify overlay is created with correct dimensions, alpha blending, and non-zero content.
-2. **`test_annotated_filename_format`** — Verify output filename matches `{stem}-annotated-{YYYYMMDDTHHMMSS}.png` pattern.
+2. **`test_annotated_filename_format`** — Verify output filename matches `{stem}-annotated-{species}-{YYYYMMDDTHHMMSS}.png` pattern.
 3. **`test_annotated_file_placed_alongside_input`** — Verify output is in the same directory as input, not a separate output dir.
 4. **`test_legend_top_regions`** — Verify legend shows top N regions sorted by area.
 5. **`test_background_excluded_from_overlay`** — Verify class 0 (background) is not colored.
@@ -245,7 +245,7 @@ make download-models
 make annotate-mouse IMAGES=/path/to/your/slides/
 
 # Human brain tissue
-make annotate-human IMAGES=/path/to/your/slides/
+make annotate-human-allen IMAGES=/path/to/your/slides/
 
 # Higher accuracy (slower — sliding window)
 make annotate-mouse-sliding IMAGES=/path/to/your/slides/
@@ -258,9 +258,9 @@ For each input image, an annotated version appears in the same folder:
 ```
 your-slides/
 ├── slide_001.jpg                              # Original (untouched)
-├── slide_001-annotated-20260322T143052.png    # Annotated overlay
+├── slide_001-annotated-mouse-20260322T143052.png    # Annotated overlay
 ├── slide_002.tif                              # Original
-└── slide_002-annotated-20260322T143055.png    # Annotated overlay
+└── slide_002-annotated-mouse-20260322T143055.png    # Annotated overlay
 ```
 
 Each annotated image shows color-coded brain regions overlaid on the original,
@@ -281,7 +281,7 @@ with a legend identifying the detected structures.
 | **Create** | `tests/test_inference_module.py` | Shared inference module tests |
 | **Create** | `tests/test_download_models.py` | Download/verification tests |
 | **Edit** | `scripts/run_inference.py` | Refactor to import from `inference.py` |
-| **Edit** | `Makefile` | Add `download-models`, `annotate-mouse`, `annotate-human`, `annotate-mouse-sliding` targets |
+| **Edit** | `Makefile` | Add `download-models`, `annotate-mouse`, `annotate-human-allen`, `annotate-mouse-sliding` targets |
 | **Edit** | `.env.example` | Add `HF_REPO_ID` |
 | **Edit** | `pyproject.toml` | Add `tqdm` to explicit deps (currently transitive) |
 | **Edit** | `README.md` | Updated quick-start section |
@@ -324,11 +324,11 @@ with a legend identifying the detected structures.
 - [x] Step 6: Create `scripts/annotate.py`
 - [x] Step 7: Create `scripts/download_models.py`
 - [x] Step 8: Create `scripts/upload_to_hf.py`
-- [x] Step 9: Makefile targets (`download-models`, `annotate-mouse`, `annotate-human`, `annotate-mouse-sliding`, `upload-models`)
+- [x] Step 9: Makefile targets (`download-models`, `annotate-mouse`, `annotate-human-allen`, `annotate-mouse-sliding`, `upload-models`)
 - [x] Step 10: `.env.example` updated with `HUGGING_FACE_TOKEN`
 - [x] Step 11: `pyproject.toml` updated with `tqdm` explicit dep
 - [x] Step 12: `README.md` updated with 3-command quick-start
-- [x] Step 13: Full test suite — **342 tests passing**
+- [x] Step 13: Full test suite — **342 tests passing** (now 397 after Step 17 VSI support)
 
 ## Next Steps (Manual)
 

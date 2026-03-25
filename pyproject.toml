@@ -18,6 +18,8 @@ dependencies = [
     "torchvision>=0.15",
     "tqdm>=4.66",
     "transformers>=4.40",
+    "python-dotenv>=1.0",
+    "ipykernel>=6.29",
 ]
 
 [project.optional-dependencies]

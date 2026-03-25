@@ -33,10 +33,26 @@ from histological_image_analysis.download import (
 )
 
 
-SPECIES_MAP = {
+REPO_SUFFIX_TO_DIR = {
     "mouse": "mouse",
     "human": "human",
+    "human-bigbrain": "human-bigbrain",
 }
+
+
+def _species_dir_from_repo_id(repo_id: str) -> str:
+    """Extract species directory name from a HuggingFace repo ID.
+
+    Handles multi-part suffixes like 'human-bigbrain' by checking longest
+    match first.
+    """
+    repo_name = repo_id.split("/")[-1]
+    for suffix, dirname in sorted(
+        REPO_SUFFIX_TO_DIR.items(), key=lambda x: len(x[0]), reverse=True
+    ):
+        if repo_name.endswith(f"-{suffix}"):
+            return dirname
+    return repo_name.rsplit("-", 1)[-1]
 
 
 def download_model(repo_id: str, local_dir: str) -> bool:
@@ -137,7 +153,7 @@ After downloading, annotate images with:
             species_name = args.species if args.species != "all" else "custom"
             local_dir = str(output_base / species_name)
         else:
-            species_name = repo_id.rsplit("-", 1)[-1]  # "mouse" or "human"
+            species_name = _species_dir_from_repo_id(repo_id)
             local_dir = str(output_base / species_name)
 
         if download_model(repo_id, local_dir):

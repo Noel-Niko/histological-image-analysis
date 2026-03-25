@@ -39,3 +39,6 @@ Thumbs.db
 .env
 # Claude notifications (cloned installer)
 claude-notifications/
+
+# Bio-Formats CLI tools (downloaded on demand via make download-bioformats-cli)
+tools/

@@ -39,11 +39,11 @@ make download-models-human-bigbrain  # Human tissue types model (~1.2 GB, 10 typ
 | Your tissue | What you want to identify | Command |
 |-------------|--------------------------|---------|
 | **Mouse** brain | 1,328 anatomical structures (79.1% mIoU) | `make annotate-mouse` |
-| **Human** brain | 44 brain regions — cortex, thalamus, etc. (65.5% mIoU) | `make annotate-human` |
+| **Human** brain | 44 brain regions — cortex, thalamus, etc. (65.5% mIoU) | `make annotate-human-allen` |
 | **Human** brain | 10 tissue types — gray matter, white matter, CSF, etc. (60.8% mIoU) | `make annotate-human-bigbrain` |
 
 The **human** and **human-bigbrain** models answer different questions about the same tissue:
-- `annotate-human` identifies *which brain region* (e.g., "cerebral cortex", "thalamus", "hippocampus")
+- `annotate-human-allen` identifies *which brain region* (e.g., "cerebral cortex", "thalamus", "hippocampus")
 - `annotate-human-bigbrain` identifies *what tissue type* (e.g., "gray matter", "white matter", "CSF")
 
 Using a mouse model on human tissue (or vice versa) will produce incorrect results.
@@ -53,7 +53,7 @@ ask for your folder path, and show a shortcut for next time:
 
 ```bash
 make annotate-mouse           # Mouse
-make annotate-human           # Human — brain regions
+make annotate-human-allen     # Human — 44 brain regions (Allen depth-3)
 make annotate-human-bigbrain  # Human — tissue types
 ```
 
@@ -61,7 +61,7 @@ make annotate-human-bigbrain  # Human — tissue types
 
 ```bash
 make annotate-mouse IMAGES=/Users/yourname/Desktop/mouse_slides/
-make annotate-human IMAGES=/Users/yourname/Desktop/human_slides/
+make annotate-human-allen IMAGES=/Users/yourname/Desktop/human_slides/
 make annotate-human-bigbrain IMAGES=/Users/yourname/Desktop/human_slides/
 ```
 
@@ -69,9 +69,9 @@ make annotate-human-bigbrain IMAGES=/Users/yourname/Desktop/human_slides/
 resolution instead of resizing to 518x518. Slower, but more accurate at image edges:
 
 ```bash
-make annotate-mouse-sliding IMAGES=/Users/yourname/Desktop/mouse_slides/
-make annotate-human-sliding IMAGES=/Users/yourname/Desktop/human_slides/
-make annotate-human-bigbrain-sliding IMAGES=/Users/yourname/Desktop/human_slides/
+make annotate-mouse-sliding IMAGES=/Users/yourname/Desktop/mouse_slides/                 # Mouse — 1,328 structures
+make annotate-human-allen-sliding IMAGES=/Users/yourname/Desktop/human_slides/
+make annotate-human-bigbrain-sliding IMAGES=/Users/yourname/Desktop/human_slides/        # Human BigBrain — 10 tissue types
 ```
 
 ### Supported image formats
@@ -89,7 +89,8 @@ make annotate-human-bigbrain-sliding IMAGES=/Users/yourname/Desktop/human_slides
 - **Best results:** Nissl-stained histological sections, similar to Allen Brain Institute atlas images
 - **File size:** No limit, but very large files (e.g., whole-slide images > 50,000 px) will be slow on CPU
 
-**NOT supported** (convert these to PNG or TIFF first):
+**NOT supported** (convert these first):
+- **Olympus VSI** (`.vsi`) — see [Working with Olympus VSI files](#working-with-olympus-vsi-files) below
 - DICOM (`.dcm`) — use a DICOM viewer to export as PNG
 - NRRD (`.nrrd`) / NIfTI (`.nii.gz`) — 3D volumes, not 2D images
 - PDF / SVG — export as raster images
@@ -105,12 +106,14 @@ Your original files are never modified.
 
 ```
 /Users/yourname/Desktop/brain_slides/
-    slide_001.jpg                              # Original (untouched)
-    slide_001-annotated-20260322T143052.png    # NEW — annotated overlay
-    slide_002.tif                              # Original (untouched)
-    slide_002-annotated-20260322T143055.png    # NEW — annotated overlay
-    notes.txt                                  # Ignored (not an image)
+    slide_001.jpg                                        # Original (untouched)
+    slide_001-annotated-mouse-20260322T143052.png        # NEW — annotated overlay
+    slide_002.tif                                        # Original (untouched)
+    slide_002-annotated-mouse-20260322T143055.png        # NEW — annotated overlay
+    notes.txt                                            # Ignored (not an image)
 ```
+
+The filename includes the model used (`mouse`, `human-allen`, or `human-bigbrain`) so you can tell which model produced each annotation.
 
 Each annotated image contains:
 - The original image with a **semi-transparent color overlay** showing detected brain regions
@@ -122,15 +125,20 @@ Each annotated image contains:
 | Model | Species | Classes | What it identifies | mIoU | Command |
 |-------|---------|---------|-------------------|------|---------|
 | Mouse (final) | Mouse | 1,328 | Anatomical brain structures | 79.1% | `make annotate-mouse` |
-| Human Allen depth-3 | Human | 44 | Brain regions (cortex, thalamus, etc.) | 65.5% | `make annotate-human` |
+| Human Allen depth-3 | Human | 44 | Brain regions (cortex, thalamus, etc.) | 65.5% | `make annotate-human-allen` |
 | Human BigBrain | Human | 10 | Tissue types (gray/white matter, CSF, etc.) | 60.8% | `make annotate-human-bigbrain` |
 
 ### Inference modes
 
-| Mode | Command | Description |
-|------|---------|-------------|
-| **Center-crop** (default) | `make annotate-mouse` | Fast. Resizes image to 518x518, runs once. |
-| **Sliding window** | `make annotate-mouse-sliding` | Slower but more accurate. Tiles at native resolution with 50% overlap. Better for structures at image edges. |
+Every model supports both inference modes. Append `-sliding` to any command for sliding window:
+
+| Mode | Mouse | Human Allen (44 regions) | Human BigBrain (10 types) |
+|------|-------|--------------------------|---------------------------|
+| **Center-crop** (default) | `make annotate-mouse` | `make annotate-human-allen` | `make annotate-human-bigbrain` |
+| **Sliding window** | `make annotate-mouse-sliding` | `make annotate-human-allen-sliding` | `make annotate-human-bigbrain-sliding` |
+
+- **Center-crop:** Fast. Resizes entire image to 518x518, runs model once.
+- **Sliding window:** Slower but more accurate. Tiles at native resolution with 50% overlap, averages predictions in overlap regions. Better for structures at image edges.
 
 ### Compute requirements
 
@@ -159,11 +167,106 @@ python scripts/annotate.py --help
 python scripts/run_inference.py --help
 ```
 
+### Working with Olympus VSI files
+
+If your images come from an Olympus/Evident microscope scanner (`.vsi` format), you need to
+convert them before annotation. VSI is a proprietary format that requires Bio-Formats (Java-based)
+to read.
+
+**Important:** VSI is a two-part format. Each `.vsi` file has a companion directory
+`_[filename]_/` containing `.ets` files with the actual pixel data. You must copy **both**
+the `.vsi` file and the companion directory together.
+
+**Setup (one-time):**
+
+```bash
+# Requires Java 11+ (check: java -version)
+make download-bioformats-cli    # Downloads Bio-Formats CLI tools (~40 MB)
+```
+
+**Inspect your VSI files** (see available resolution levels):
+
+```bash
+make inspect-vsi IMAGES=/path/to/slides/
+```
+
+**Convert and annotate:**
+
+```bash
+# Convert at ~10 µm/pixel (matches mouse model training data)
+make convert-vsi IMAGES=/path/to/slides/ RESOLUTION=10
+
+# Then annotate the converted TIFFs
+make annotate-mouse IMAGES=/path/to/slides/
+```
+
+The `RESOLUTION` parameter controls the target pixel size in µm/pixel. The converter
+automatically selects the pyramid level closest to your target. Lower values = higher
+resolution, larger files.
+
+| Target resolution | Use case | Typical output size |
+|-------------------|----------|---------------------|
+| `RESOLUTION=10` | Mouse brain (default, matches training data) | ~1000–3000 px |
+| `RESOLUTION=40` | Human Allen model | ~500–1000 px |
+| `RESOLUTION=200` | Human BigBrain model | ~100–300 px |
+
+**Disk space:** Converted TIFFs at the default resolution are typically <100 MB each.
+
 ### More info
 
 - [Model download guide](docs/model_download_guide.md) — download, verify, troubleshoot
 - [CLI annotator plan](docs/step15_cli_annotator_plan.md) — full design document
 - [Paper draft](docs/paper_draft.md) — full ablation study (79.1% mIoU, 9 runs)
+
+---
+
+## HuggingFace Model Maintenance
+
+All three models are hosted on HuggingFace Hub. Two notebooks manage uploads:
+
+| Task | Notebook | Run where |
+|------|----------|-----------|
+| Upload/update **model weights** | `notebooks/upload_models_to_hf.ipynb` | Databricks or local |
+| Upload/update **papers + READMEs** | `notebooks/upload_papers_to_hf.ipynb` | Local only |
+
+### HuggingFace repos
+
+| Model | HuggingFace Repo |
+|-------|-----------------|
+| Mouse (1,328 classes) | [Noel-Niko/dinov2-upernet-20260322-histology-annotation-mouse](https://huggingface.co/Noel-Niko/dinov2-upernet-20260322-histology-annotation-mouse) |
+| Human Allen (44 regions) | [Noel-Niko/dinov2-upernet-20260322-histology-annotation-human](https://huggingface.co/Noel-Niko/dinov2-upernet-20260322-histology-annotation-human) |
+| Human BigBrain (10 types) | [Noel-Niko/dinov2-upernet-20260322-histology-annotation-human-bigbrain](https://huggingface.co/Noel-Niko/dinov2-upernet-20260322-histology-annotation-human-bigbrain) |
+
+### Update model weights
+
+Use when you retrain a model and want to push new weights to HuggingFace.
+
+**From Databricks** (reads models from DBFS):
+1. Uncomment the `%pip install` line in Cell 0
+2. Set `UPLOAD_SPECIES` in Cell 2 (`"mouse"`, `"human"`, `"human-bigbrain"`, or `"all"`)
+3. Run all cells
+
+**From local** (reads models from `./models/`):
+```bash
+export HUGGING_FACE_TOKEN=hf_your_token_here
+jupyter notebook notebooks/upload_models_to_hf.ipynb
+```
+
+### Update papers or READMEs
+
+Use when you revise a paper or want to update the model card shown on HuggingFace.
+
+```bash
+# 1. Edit the paper(s) in docs/
+#    - docs/mouse_paper_draft.md     -> uploaded to mouse repo as paper.md
+#    - docs/human_paper_draft.md     -> uploaded to human + human-bigbrain repos as paper.md
+
+# 2. Run the papers notebook locally
+export HUGGING_FACE_TOKEN=hf_your_token_here
+jupyter notebook notebooks/upload_papers_to_hf.ipynb
+```
+
+To edit a README model card, modify the templates in Cell 1 of `upload_papers_to_hf.ipynb` and re-run. HuggingFace repos are git-backed — every change is versioned and you can re-run freely.
 
 ---
 
@@ -207,7 +310,7 @@ cp .env.example .env        # Edit with your values
 make install                # uv sync --all-extras
 
 # Run tests
-make test                   # 133 tests
+make test                   # 397 tests
 
 # Lint
 make lint                   # ruff check
@@ -320,8 +423,9 @@ histological-image-analysis/
 │   ├── training.py                      # DINOv2 + UperNet model/trainer factories
 │   ├── inference.py                     # Shared inference (model loading, prediction)
 │   ├── annotation.py                    # Overlay generation (color regions + legend)
-│   └── download.py                      # Model download/verification utilities
-├── tests/                               # pytest suite
+│   ├── download.py                      # Model download/verification utilities
+│   └── vsi.py                           # VSI inspection, parsing, series selection, conversion
+├── tests/                               # pytest suite (397 tests)
 │   ├── test_ontology.py                 # 51 tests (incl. real ontology + annotation)
 │   ├── test_ccfv3_slicer.py             # 22 tests
 │   ├── test_svg_rasterizer.py           # 10 tests
@@ -330,6 +434,8 @@ histological-image-analysis/
 │   ├── test_inference_module.py         # 14 tests (inference utilities)
 │   ├── test_annotate.py                 # 16 tests (overlay + filename)
 │   ├── test_download_models.py          # 11 tests (download verification)
+│   ├── test_inspect_vsi.py              # 28 tests (VSI inspection + parsing)
+│   ├── test_convert_vsi.py              # 23 tests (VSI conversion + series selection)
 │   ├── conftest.py                      # Shared fixtures
 │   └── fixtures/minimal_ontology.json   # 15-structure test fixture
 ├── scripts/
@@ -337,6 +443,8 @@ histological-image-analysis/
 │   ├── download_models.py               # Download models from HuggingFace Hub
 │   ├── upload_to_hf.py                  # Upload models to HuggingFace (one-time)
 │   ├── run_inference.py                 # Raw inference: masks + visualizations
+│   ├── inspect_vsi.py                   # Inspect VSI file metadata (series, resolutions)
+│   ├── convert_vsi.py                   # Batch-convert VSI → TIFF at target resolution
 │   ├── download_allen_data.py           # Download Allen Brain CCFv3 data
 │   └── generate_paper_figures.py        # Generate paper figures locally
 ├── docs/                                # Design docs and progress tracking

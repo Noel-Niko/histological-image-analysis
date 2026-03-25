@@ -33,11 +33,11 @@ scripts/annotate.py          ← CLI entry point (argparse)
         │
         ├── histological_image_analysis/annotation.py
         │       create_annotated_overlay()  ← alpha-blend color overlay on original
-        │       build_annotated_filename()  ← {stem}-annotated-{timestamp}.png
+        │       build_annotated_filename()  ← {stem}-annotated-{species}-{timestamp}.png
         │       _draw_contours()            ← boundary lines between regions
         │       _draw_legend()              ← top-15 regions with color swatches
         │
-        └── Output: {stem}-annotated-{YYYYMMDDTHHMMSS}.png
+        └── Output: {stem}-annotated-{species}-{YYYYMMDDTHHMMSS}.png
             (saved in SAME folder as input, originals never modified)
 ```
 
@@ -77,14 +77,19 @@ All images are converted to RGB on load. Grayscale works. Output is always `.png
 | `scripts/annotate.py` | Main CLI — guided mode (no args) or direct mode (with path) |
 | `scripts/download_models.py` | Downloads models from HuggingFace Hub → `models/` |
 | `scripts/upload_to_hf.py` | One-time upload from local → HuggingFace Hub |
+| `scripts/inspect_vsi.py` | CLI: inspect VSI file metadata (series, resolutions) |
+| `scripts/convert_vsi.py` | CLI: batch-convert VSI → TIFF at target resolution |
 | `scripts/run_inference.py` | Older inference script — raw masks + matplotlib panels |
 | `src/.../inference.py` | Shared: model loading, inference, file discovery |
+| `src/.../vsi.py` | VSI inspection, parsing, series selection, conversion |
 | `src/.../annotation.py` | Overlay generation: colors, contours, legend |
 | `src/.../download.py` | Download verification, HF repo ID resolution |
 | `tests/test_inference_module.py` | 14 tests for inference utilities |
 | `tests/test_annotate.py` | 16 tests for overlay + filename |
 | `tests/test_download_models.py` | 11 tests for download verification |
-| `Makefile` | User-facing commands: `annotate`, `annotate-human`, etc. |
+| `tests/test_inspect_vsi.py` | 28 tests for VSI inspection + showinf parsing |
+| `tests/test_convert_vsi.py` | 23 tests for VSI conversion + series selection |
+| `Makefile` | User-facing commands: `annotate-mouse`, `annotate-human-allen`, VSI conversion, etc. |
 
 ---
 
@@ -98,13 +103,18 @@ make download-models-human-bigbrain        # Human BigBrain model only (~1.2 GB)
 
 make annotate-mouse                              # Mouse brain, guided mode
 make annotate-mouse IMAGES=/path                 # Mouse brain, direct mode
-make annotate-human                              # Human brain regions (44 classes), guided
-make annotate-human IMAGES=/path                 # Human brain regions, direct mode
+make annotate-human-allen                        # Human brain regions (44 classes), guided
+make annotate-human-allen IMAGES=/path           # Human brain regions, direct mode
 make annotate-human-bigbrain                     # Human tissue types (10 classes), guided
 make annotate-human-bigbrain IMAGES=/path        # Human tissue types, direct mode
 make annotate-mouse-sliding                      # Mouse, sliding window, guided
-make annotate-human-sliding                      # Human regions, sliding window, guided
+make annotate-human-allen-sliding                 # Human Allen regions, sliding window, guided
 make annotate-human-bigbrain-sliding             # Human tissue, sliding window, guided
+
+# VSI conversion (Olympus scanner slides)
+make download-bioformats-cli                     # One-time: download Bio-Formats CLI tools
+make inspect-vsi IMAGES=/path                    # Show series, dimensions, pixel sizes
+make convert-vsi IMAGES=/path RESOLUTION=10      # Convert VSI → TIFF at target µm/pixel
 ```
 
 ---
@@ -118,7 +128,7 @@ make annotate-human-bigbrain-sliding             # Human tissue, sliding window,
 - Guided mode with file-type instructions and path prompts
 - Direct mode for scripted/repeated use
 - Unsupported files are warned about before processing begins
-- 342 tests passing (41 new for CLI tool + 301 existing)
+- 397 tests passing (51 VSI + 41 CLI tool + 305 existing)
 - Original files are never modified (verified by tests + code audit)
 
 ### What's Missing / Known Gaps
@@ -129,25 +139,40 @@ make annotate-human-bigbrain-sliding             # Human tissue, sliding window,
    from 3D volume slicing. Improving the human model is a research priority.
 
 2. **No species auto-detection.**
-   The user must choose `make annotate-mouse` (mouse) or `make annotate-human` (human).
+   The user must choose `make annotate-mouse` (mouse) or `make annotate-human-allen` (human).
    There is no automatic detection of whether an image is mouse or human tissue.
    This could be added as a lightweight classifier in the future.
 
-3. **No whole-slide image (WSI) support.**
-   The tool works on standard image files. Whole-slide imaging formats (`.svs`, `.ndpi`,
-   `.mrxs`) used in digital pathology are not supported. These require specialized
-   libraries like `openslide` to read tiled pyramid images at different zoom levels.
+3. **Olympus VSI support (added Step 17).**
+   VSI files from Olympus/Evident scanners are now supported via a conversion workflow.
+   Users run `make convert-vsi IMAGES=/path/ RESOLUTION=10` to convert `.vsi` files to
+   standard TIFF at a target resolution, then annotate the converted TIFFs. The conversion
+   uses Bio-Formats CLI tools (`bfconvert`, `showinf`) which require Java 11+. See
+   `docs/step17_vsi_support_plan.md` for full details. Key files:
+   - `src/histological_image_analysis/vsi.py` — inspection, parsing, conversion logic
+   - `scripts/inspect_vsi.py` — CLI to display VSI series/resolution metadata
+   - `scripts/convert_vsi.py` — CLI to batch-convert VSI → TIFF
 
-4. **Font fallback on non-macOS systems.**
+   **Domain gap note:** The models were trained on atlas data (10–200 µm/pixel, Nissl/Merker
+   stain). Real scanner slides may have different staining, artifacts, and resolution.
+   Manual validation (Step 17, Step 6) is required before batch processing to assess
+   annotation quality. If quality is poor, domain adaptation fine-tuning may be needed
+   (separate project/paper).
+
+4. **No other whole-slide image (WSI) format support.**
+   Beyond VSI (which is converted), formats like `.svs`, `.ndpi`, `.mrxs` from other
+   scanners are not supported. These require `openslide` to read tiled pyramid images.
+
+5. **Font fallback on non-macOS systems.**
    The legend panel (`annotation.py:152`) tries to load Helvetica from macOS system fonts.
    It falls back to PIL's default bitmap font on Linux/Windows, which looks worse.
    A bundled TTF font would improve cross-platform appearance.
 
-5. **No batch progress reporting beyond tqdm.**
+6. **No batch progress reporting beyond tqdm.**
    For very large batches (hundreds of slides), there's no summary log file or
    CSV output listing which files were processed, how many regions were detected, etc.
 
-6. **Training data is not included in the repo.**
+7. **Training data is not included in the repo.**
    Training data (Allen Brain CCFv3 volumes, human atlas images) lives on Databricks.
    The `data/` directory has download scripts but is mostly `.gitignore`d. A future
    contributor would need Databricks access to retrain models.
@@ -190,7 +215,7 @@ If you train a new model (e.g., improved human model, different species):
 5. **Update** `resolve_repo_ids()` in `download.py` if you add a new species.
 6. **Update** `Makefile` with a new `annotate-{species}` target.
 7. **Update** `README.md` with the new model in the command table.
-8. **Run tests:** `make test` — all 342+ should still pass.
+8. **Run tests:** `make test` — all 397+ should still pass.
 
 ---
 
@@ -201,7 +226,7 @@ If you train a new model (e.g., improved human model, different species):
 git clone https://github.com/Noel-Niko/histological-image-analysis.git
 cd histological-image-analysis
 make install          # uv sync --all-extras
-make test             # 342 tests
+make test             # 397 tests
 make download-models  # pull models from HuggingFace Hub
 ```
 

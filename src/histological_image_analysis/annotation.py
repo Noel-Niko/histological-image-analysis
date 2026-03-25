@@ -29,16 +29,18 @@ LEGEND_LINE_HEIGHT = 22
 LEGEND_PADDING = 12
 
 
-def build_annotated_filename(input_path: str) -> str:
+def build_annotated_filename(input_path: str, species: str = "mouse") -> str:
     """Build the annotated output filename for a given input image.
 
     Places the output in the same directory as the input, with format:
-    ``{stem}-annotated-{YYYYMMDDTHHMMSS}.png``
+    ``{stem}-annotated-{species}-{YYYYMMDDTHHMMSS}.png``
 
     Parameters
     ----------
     input_path : str
         Path to the original input image.
+    species : str
+        Model species identifier (e.g. "mouse", "human-allen", "human-bigbrain").
 
     Returns
     -------
@@ -47,7 +49,7 @@ def build_annotated_filename(input_path: str) -> str:
     """
     p = Path(input_path)
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    output_name = f"{p.stem}-annotated-{timestamp}.png"
+    output_name = f"{p.stem}-annotated-{species}-{timestamp}.png"
     return str(p.parent / output_name)
 
 

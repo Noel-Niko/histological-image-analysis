@@ -22,7 +22,7 @@ from histological_image_analysis.annotation import (
 
 
 ANNOTATED_FILENAME_PATTERN = re.compile(
-    r"^.+-annotated-\d{8}T\d{6}\.png$"
+    r"^.+-annotated-(mouse|human|human-allen|human-bigbrain)-\d{8}T\d{6}\.png$"
 )
 
 
@@ -30,31 +30,40 @@ class TestBuildAnnotatedFilename:
     """Test the annotated filename convention."""
 
     def test_format_matches_pattern(self):
-        result = build_annotated_filename("/path/to/slide_001.jpg")
+        result = build_annotated_filename("/path/to/slide_001.jpg", "mouse")
         assert ANNOTATED_FILENAME_PATTERN.match(Path(result).name)
 
     def test_preserves_original_stem(self):
-        result = build_annotated_filename("/data/brain_slice_42.tif")
+        result = build_annotated_filename("/data/brain_slice_42.tif", "mouse")
         name = Path(result).name
-        assert name.startswith("brain_slice_42-annotated-")
+        assert name.startswith("brain_slice_42-annotated-mouse-")
 
     def test_output_in_same_directory_as_input(self):
-        result = build_annotated_filename("/some/deep/path/slide.jpg")
+        result = build_annotated_filename("/some/deep/path/slide.jpg", "mouse")
         assert Path(result).parent == Path("/some/deep/path")
 
     def test_always_png_extension(self):
         for ext in [".jpg", ".tif", ".bmp", ".jpeg"]:
-            result = build_annotated_filename(f"/data/img{ext}")
+            result = build_annotated_filename(f"/data/img{ext}", "mouse")
             assert result.endswith(".png")
 
     def test_timestamp_is_recent(self):
-        result = build_annotated_filename("/data/slide.jpg")
+        result = build_annotated_filename("/data/slide.jpg", "mouse")
         name = Path(result).name
-        # Extract timestamp from filename
-        ts_str = name.split("-annotated-")[1].replace(".png", "")
+        # Extract timestamp — last part after the species
+        ts_str = re.search(r"\d{8}T\d{6}", name).group()
         ts = datetime.strptime(ts_str, "%Y%m%dT%H%M%S")
         # Should be within last 5 seconds
         assert (datetime.now() - ts).total_seconds() < 5
+
+    def test_species_appears_in_filename(self):
+        for species in ["mouse", "human-allen", "human-bigbrain"]:
+            result = build_annotated_filename("/data/slide.jpg", species)
+            assert f"-annotated-{species}-" in Path(result).name
+
+    def test_default_species_is_mouse(self):
+        result = build_annotated_filename("/data/slide.jpg")
+        assert "-annotated-mouse-" in Path(result).name
 
 
 class TestCreateAnnotatedOverlay:
